@@ -18,7 +18,13 @@ export class DuomiClient {
         private readonly config: AdapterConfig,
         dependencies: ClientDependencies = {},
     ) {
-        this.fetchImpl = dependencies.fetch || fetch;
+        // Cloudflare's global fetch must be called as a plain function. Keeping
+        // it directly on the client and invoking `this.fetchImpl(...)` gives it
+        // the client as `this`, which production Workers reject.
+        const fetchImpl = dependencies.fetch;
+        this.fetchImpl = fetchImpl
+            ? (input, init) => fetchImpl(input, init)
+            : (input, init) => fetch(input, init);
         this.sleep = dependencies.sleep || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
         this.now = dependencies.now || Date.now;
     }

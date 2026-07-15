@@ -4,6 +4,7 @@
 
 + [新增] 新增服务端 Duomi Adapter，通过同域代理支持异步文生图、R2 参考图编辑和 VEO/Grok 视频生成，并避免真实 Duomi Key 暴露在浏览器。
 + [新增] 新增 Cloudflare 单 Worker 部署，支持静态画布、Duomi API、R2 binding、参考图逐张预上传和免费版轮询预算。
++ [修复] 修复 Cloudflare Workers 生产环境调用 Duomi 时全局 fetch 绑定错误的问题。
 + [优化] 本地 Agent 连接说明明确区分插件 / 手动 MCP 才会增加 Codex token 消耗，直接运行 Agent 不受影响。
 + [优化] 优化本地 Agent 连接说明，区分 Codex 插件启动和直接运行 Agent 两种方式。
 + [新增] Agent 对话消息改用 streamdown 流式渲染，提升长回复与 Markdown 内容展示效果。
