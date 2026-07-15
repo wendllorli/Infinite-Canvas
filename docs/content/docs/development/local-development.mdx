@@ -1,0 +1,51 @@
+---
+title: 本地开发
+description: 前端优先的本地开发方式
+---
+
+# 本地开发
+
+当前主应用以 `web/` 前端为主。普通 OpenAI 兼容渠道由浏览器直连；Duomi 渠道可通过独立 Adapter 使用同域路径，真实 Key 只保存在 Adapter 环境变量中。
+
+## 1. 启动前端
+
+```bash
+cd web
+bun install
+bun run dev
+```
+
+前端默认访问：
+
+```text
+http://localhost:3000
+```
+
+## 2. 配置模型
+
+打开右上角配置弹窗，填写自己的 `Base URL`、`API Key` 和模型名。第三方提示词和 WebDAV 都由浏览器前端直连。
+
+如需开发 Duomi Adapter，另开终端执行：
+
+```bash
+cd duomi-adapter
+cp .env.example .env
+npm install
+npm run dev
+```
+
+Vite 会把 `/api/duomi` 转发到 `http://localhost:8787`。画布中填写 OpenAI 格式、`http://localhost:3000/api/duomi/v1`、占位 API Key `local-duomi` 和图片模型 `gpt-image-2`。
+
+## 3. 启动文档站
+
+如果需要单独调整文档站，在 `docs` 目录执行：
+
+```bash
+bun run dev
+```
+
+## 常见场景
+
+- 改画布、页面和交互：主要看 `web/`
+- 改提示词缓存：主要看 `web/src/services/api/prompts.ts`
+- 改文档站内容：主要看 `docs/content/docs/`

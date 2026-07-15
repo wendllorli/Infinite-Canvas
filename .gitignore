@@ -1,0 +1,16 @@
+.next/
+out/
+node_modules/
+.env*
+!.env.example
+data/
+*.log
+*.tsbuildinfo
+.DS_Store
+.idea
+web/dist
+duomi-adapter/dist/
+cloudflare-worker/.dev.vars
+cloudflare-worker/.wrangler/
+cloudflare-worker/dist/
+cloudflare-worker/dist-test/

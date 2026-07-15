@@ -1,0 +1,28 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "logan-ai-infinite-canvas",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-15",
+  "workers_dev": true,
+  "assets": {
+    "directory": "../web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/duomi/*"]
+  },
+  "r2_buckets": [
+    {
+      "binding": "REFERENCES",
+      "bucket_name": "infinite-canvas-images"
+    }
+  ],
+  "vars": {
+    "DUOMI_API_BASE": "https://duomiapi.com",
+    "DUOMI_AUTH_MODE": "raw",
+    "DUOMI_POLL_INTERVAL_MS": "7000",
+    "DUOMI_TIMEOUT_MS": "300000",
+    "DUOMI_IMAGE_MODEL": "gpt-image-2",
+    "DUOMI_VIDEO_MODELS": "veo3.1-fast,veo3.1-pro,grok-video,grok-video-1.5",
+    "STORAGE_PUBLIC_BASE_URL": "https://pub-cfb00cce694541868d0748ae695bdb2f.r2.dev"
+  }
+}
