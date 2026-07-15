@@ -6,12 +6,13 @@ import { DuomiClient } from "./duomi-client.js";
 import { healthRoutes } from "./routes/health.js";
 import { imageRoutes } from "./routes/images.js";
 import { modelsRoutes } from "./routes/models.js";
+import { mediaRoutes } from "./routes/media.js";
 import { videoRoutes } from "./routes/videos.js";
 import { uploadRoutes } from "./routes/uploads.js";
 import { S3ReferenceStorage, type ReferenceStorage } from "./storage.js";
 import type { AdapterConfig, AdapterErrorBody } from "./types.js";
 
-type AppDependencies = { client?: DuomiClient; storage?: ReferenceStorage };
+type AppDependencies = { client?: DuomiClient; storage?: ReferenceStorage; fetch?: typeof fetch };
 
 export async function buildApp(config: AdapterConfig, dependencies: AppDependencies = {}): Promise<FastifyInstance> {
     const app = Fastify({ logger: true, bodyLimit: 200 * 1024 * 1024 });
@@ -45,6 +46,7 @@ export async function buildApp(config: AdapterConfig, dependencies: AppDependenc
     await app.register(multipart);
     await app.register(healthRoutes);
     await app.register(modelsRoutes(config));
+    await app.register(mediaRoutes(dependencies.fetch));
     await app.register(imageRoutes(config, client, storage));
     await app.register(videoRoutes(config, client, storage));
     await app.register(uploadRoutes(storage));

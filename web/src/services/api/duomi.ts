@@ -17,6 +17,10 @@ export function isDuomiAdapterBaseUrl(baseUrl: string) {
     }
 }
 
+export function duomiResultImageUrl(baseUrl: string, upstreamUrl: string) {
+    return `${buildApiUrl(baseUrl, "/media")}?url=${encodeURIComponent(upstreamUrl)}`;
+}
+
 export async function uploadDuomiImages(config: DuomiConfig, files: File[], signal?: AbortSignal) {
     const urls: string[] = [];
     for (const file of files) {

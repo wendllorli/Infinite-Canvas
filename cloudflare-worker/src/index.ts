@@ -1,6 +1,7 @@
 import { DuomiClient } from "../../duomi-adapter/src/duomi-client.js";
 import { AdapterError } from "../../duomi-adapter/src/errors.js";
 import { GROK_MODELS, IMAGE_MIME_TYPES, QUALITY_VALUES, VEO_MODELS, canonicalVideoModel, imageUrls, mapVideoTask, validateVideoReferenceCount, videoPayload } from "../../duomi-adapter/src/media.js";
+import { fetchDuomiResultImage } from "../../duomi-adapter/src/media-proxy.js";
 import type { AdapterConfig, AdapterErrorBody, DuomiImageRequest } from "../../duomi-adapter/src/types.js";
 
 export interface Env {
@@ -17,7 +18,8 @@ export interface Env {
 }
 
 const API_PREFIX = "/api/duomi";
-const DEFAULT_POLL_INTERVAL_MS = 7000;
+const DEFAULT_POLL_INTERVAL_MS = 15000;
+const DEFAULT_TIMEOUT_MS = 600000;
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 type ReferenceImage = Pick<File, "type" | "size" | "arrayBuffer">;
 
@@ -44,6 +46,7 @@ export async function handleRequest(request: Request, env: Env, fetchImpl: typeo
     if (request.method === "GET" && path === "/v1/models") {
         return json({ object: "list", data: [config.imageModel, ...config.videoModels].map((id) => ({ id, object: "model", owned_by: "duomi" })) });
     }
+    if (request.method === "GET" && path === "/v1/media") return mediaResponse(url.searchParams.get("url"), fetchImpl);
     if (request.method === "POST" && path === "/v1/uploads") return uploadResponse(request, env);
     if (request.method === "POST" && path === "/v1/images/generations") return json(await client.generateImages(generationRequest(config, await jsonBody(request))));
     if (request.method === "POST" && path === "/v1/images/edits") return json(await client.generateImages(await editRequest(request, config, env)));
@@ -59,7 +62,7 @@ export async function handleRequest(request: Request, env: Env, fetchImpl: typeo
     return json({ error: { message: "Not found", type: "not_found" } }, 404);
 }
 
-export function defaultImageUpstreamRequestBudget(timeoutMs = 300000, pollIntervalMs = DEFAULT_POLL_INTERVAL_MS) {
+export function defaultImageUpstreamRequestBudget(timeoutMs = DEFAULT_TIMEOUT_MS, pollIntervalMs = DEFAULT_POLL_INTERVAL_MS) {
     return 1 + Math.ceil(timeoutMs / pollIntervalMs);
 }
 
@@ -72,10 +75,21 @@ function workerConfig(env: Env): AdapterConfig {
         apiKey: env.DUOMI_API_KEY?.trim() || "",
         authMode,
         pollIntervalMs: positiveInteger(env.DUOMI_POLL_INTERVAL_MS, DEFAULT_POLL_INTERVAL_MS, "DUOMI_POLL_INTERVAL_MS"),
-        timeoutMs: positiveInteger(env.DUOMI_TIMEOUT_MS, 300000, "DUOMI_TIMEOUT_MS"),
+        timeoutMs: positiveInteger(env.DUOMI_TIMEOUT_MS, DEFAULT_TIMEOUT_MS, "DUOMI_TIMEOUT_MS"),
         imageModel: env.DUOMI_IMAGE_MODEL?.trim() || "gpt-image-2",
         videoModels: csv(env.DUOMI_VIDEO_MODELS, ["veo3.1-fast", "veo3.1-pro", "grok-video", "grok-video-1.5"]),
     };
+}
+
+async function mediaResponse(value: unknown, fetchImpl: typeof fetch) {
+    const upstream = await fetchDuomiResultImage(value, fetchImpl);
+    const headers = new Headers({
+        "Content-Type": upstream.headers.get("content-type") || "image/png",
+        "Cache-Control": "private, max-age=300",
+    });
+    const contentLength = upstream.headers.get("content-length");
+    if (contentLength) headers.set("Content-Length", contentLength);
+    return new Response(upstream.body, { status: 200, headers });
 }
 
 function generationRequest(config: AdapterConfig, body: Record<string, unknown>): DuomiImageRequest {

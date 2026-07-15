@@ -10,8 +10,8 @@ const bindings = {
     DUOMI_API_BASE: "https://duomi.test",
     DUOMI_API_KEY: "worker-test-secret",
     DUOMI_AUTH_MODE: "raw",
-    DUOMI_POLL_INTERVAL_MS: "7000",
-    DUOMI_TIMEOUT_MS: "300000",
+    DUOMI_POLL_INTERVAL_MS: "15000",
+    DUOMI_TIMEOUT_MS: "600000",
     DUOMI_IMAGE_MODEL: "gpt-image-2",
     DUOMI_VIDEO_MODELS: "veo3.1-fast,veo3.1-pro,grok-video,grok-video-1.5",
     STORAGE_PUBLIC_BASE_URL: "https://media.example.com",
@@ -88,6 +88,24 @@ describe("Cloudflare Worker routes", () => {
         await oversizedResponse.arrayBuffer();
     });
 
+    it("proxies an allowed Duomi result image through the same origin", async () => {
+        const response = await handleRequest(
+            new Request("https://canvas.test/api/duomi/v1/media?url=" + encodeURIComponent("https://openservice-prod-1.oss-cn-hangzhou.aliyuncs.com/result.png")),
+            directEnv(),
+            async () => new Response(new Uint8Array([137, 80, 78, 71]), { headers: { "Content-Type": "image/png", "Content-Length": "4" } }),
+        );
+        expect(response.status).toBe(200);
+        expect(response.headers.get("content-type")).toBe("image/png");
+        expect(Array.from(new Uint8Array(await response.arrayBuffer()))).toEqual([137, 80, 78, 71]);
+
+        await expect(
+            handleRequest(
+                new Request("https://canvas.test/api/duomi/v1/media?url=" + encodeURIComponent("https://example.com/not-duomi.png")),
+                directEnv(),
+            ),
+        ).rejects.toMatchObject({ statusCode: 400, type: "invalid_request_error" });
+    });
+
     it("converts a JSON reference edit through the shared Duomi client", async () => {
         const calls: Array<{ url: string; authorization: string | null; body: unknown }> = [];
         let poll = 0;
@@ -144,7 +162,8 @@ describe("Cloudflare Worker routes", () => {
         expect(await response.text()).toBe("spa-index");
     });
 
-    it("keeps the default five-minute image poll budget within 50 upstream requests", () => {
+    it("keeps the default ten-minute image poll budget within 50 upstream requests", () => {
+        expect(defaultImageUpstreamRequestBudget()).toBe(41);
         expect(defaultImageUpstreamRequestBudget()).toBeLessThanOrEqual(50);
     });
 });

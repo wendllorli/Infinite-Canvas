@@ -19,8 +19,8 @@
   "vars": {
     "DUOMI_API_BASE": "https://duomiapi.com",
     "DUOMI_AUTH_MODE": "raw",
-    "DUOMI_POLL_INTERVAL_MS": "7000",
-    "DUOMI_TIMEOUT_MS": "300000",
+    "DUOMI_POLL_INTERVAL_MS": "15000",
+    "DUOMI_TIMEOUT_MS": "600000",
     "DUOMI_IMAGE_MODEL": "gpt-image-2",
     "DUOMI_VIDEO_MODELS": "veo3.1-fast,veo3.1-pro,grok-video,grok-video-1.5",
     "STORAGE_PUBLIC_BASE_URL": "https://pub-cfb00cce694541868d0748ae695bdb2f.r2.dev"

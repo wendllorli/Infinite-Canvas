@@ -3,7 +3,7 @@ import axios from "axios";
 import { buildApiUrl, resolveModelRequestConfig, type AiConfig, type ModelChannel } from "@/stores/use-config-store";
 import { nanoid } from "nanoid";
 import { dataUrlToFile } from "@/lib/image-utils";
-import { isDuomiAdapterBaseUrl, uploadDuomiImages } from "@/services/api/duomi";
+import { duomiResultImageUrl, isDuomiAdapterBaseUrl, uploadDuomiImages } from "@/services/api/duomi";
 import { buildImageReferencePromptText } from "@/lib/image-reference-prompt";
 import { imageToDataUrl } from "@/services/image-storage";
 import type { ReferenceImage } from "@/types/image";
@@ -679,7 +679,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
             },
         );
         const images = parseImagePayload(response.data);
-        return images;
+        return isDuomiAdapterBaseUrl(requestConfig.baseUrl) ? images.map((image) => ({ ...image, dataUrl: duomiResultImageUrl(requestConfig.baseUrl, image.dataUrl) })) : images;
     } catch (error) {
         throw new Error(readAxiosError(error, "请求失败"));
     }
@@ -716,7 +716,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
                 },
                 { headers: aiHeaders(requestConfig, "application/json"), signal: options?.signal },
             );
-            return parseImagePayload(response.data);
+            return parseImagePayload(response.data).map((image) => ({ ...image, dataUrl: duomiResultImageUrl(requestConfig.baseUrl, image.dataUrl) }));
         } catch (error) {
             throw new Error(readAxiosError(error, "请求失败"));
         }

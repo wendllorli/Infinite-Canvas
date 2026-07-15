@@ -42,8 +42,8 @@ npm run dev
 | `DUOMI_API_BASE` | `https://duomiapi.com` | Duomi 服务地址 |
 | `DUOMI_API_KEY` | 无 | 真实服务端密钥，必填 |
 | `DUOMI_AUTH_MODE` | `raw` | `raw` 发送 `Authorization: API_KEY`；`bearer` 发送 Bearer Token |
-| `DUOMI_POLL_INTERVAL_MS` | `2000` | 图片任务轮询间隔 |
-| `DUOMI_TIMEOUT_MS` | `300000` | 图片任务总超时 |
+| `DUOMI_POLL_INTERVAL_MS` | `15000` | 图片任务轮询间隔；兼顾 Cloudflare 免费版子请求额度 |
+| `DUOMI_TIMEOUT_MS` | `600000` | 图片任务总超时，默认 10 分钟 |
 | `DUOMI_IMAGE_MODEL` | `gpt-image-2` | 模型列表和缺省图片模型 |
 | `DUOMI_VIDEO_MODELS` | VEO/GROK 四个模型 | 逗号分隔的视频模型列表 |
 | `STORAGE_ENDPOINT` | 无 | S3 API 地址；Cloudflare R2 使用账户级 endpoint |

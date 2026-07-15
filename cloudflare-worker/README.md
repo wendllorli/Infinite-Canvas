@@ -42,7 +42,7 @@ cd cloudflare-worker
 npx wrangler secret put DUOMI_API_KEY
 ```
 
-`DUOMI_API_BASE`、鉴权模式、模型和轮询参数是 `wrangler.jsonc` 中的非敏感变量。免费版默认轮询间隔为 7000ms，五分钟任务最多使用 44 次 Duomi 上游请求。
+`DUOMI_API_BASE`、鉴权模式、模型和轮询参数是 `wrangler.jsonc` 中的非敏感变量。免费版默认轮询间隔为 15000ms，十分钟任务最多使用 41 次 Duomi 上游请求。`/v1/media` 会通过同域代理读取 Duomi 结果图片，避免部分 OSS 临时地址缺少 CORS 响应头而无法写入画布。
 
 ## GitHub 与 Workers Builds
 

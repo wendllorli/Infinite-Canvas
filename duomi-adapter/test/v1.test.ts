@@ -68,6 +68,23 @@ describe("V1 routes", () => {
         await app.close();
     });
 
+    it("proxies an allowed Duomi result image without relying on upstream CORS", async () => {
+        const app = await buildApp(config("http://127.0.0.1:1"), {
+            fetch: async () => new Response(new Uint8Array([137, 80, 78, 71]), { headers: { "Content-Type": "image/png" } }),
+        });
+        const response = await app.inject({
+            method: "GET",
+            url: "/v1/media?url=" + encodeURIComponent("https://openservice-prod-1.oss-cn-hangzhou.aliyuncs.com/result.png"),
+        });
+        expect(response.statusCode).toBe(200);
+        expect(response.headers["content-type"]).toContain("image/png");
+        expect(Array.from(response.rawPayload)).toEqual([137, 80, 78, 71]);
+
+        const rejected = await app.inject({ method: "GET", url: "/v1/media?url=" + encodeURIComponent("https://example.com/not-duomi.png") });
+        expect(rejected.statusCode).toBe(400);
+        await app.close();
+    });
+
     it("creates a task, polls pending and running, then returns every image", async () => {
         let poll = 0;
         const base = await mockServer((request, response, body) => {
