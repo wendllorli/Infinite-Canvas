@@ -59,27 +59,29 @@ export type ModelCapability = "image" | "video" | "text" | "audio";
 const CHANNEL_MODEL_SEPARATOR = "::";
 const OPENAI_BASE_URL = "https://api.openai.com";
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com";
+const DUOMI_BASE_URL = "/api/duomi/v1";
+const DUOMI_MODELS = ["gpt-image-2", "veo3.1-fast", "veo3.1-pro", "grok-video", "grok-video-1.5"];
 
 export const defaultConfig: AiConfig = {
     channelMode: "local",
-    baseUrl: OPENAI_BASE_URL,
-    apiKey: "",
+    baseUrl: DUOMI_BASE_URL,
+    apiKey: "local-duomi",
     apiFormat: "openai",
     channels: [
         {
             id: "default",
-            name: "默认渠道",
-            baseUrl: OPENAI_BASE_URL,
-            apiKey: "",
+            name: "Duomi 安全代理",
+            baseUrl: DUOMI_BASE_URL,
+            apiKey: "local-duomi",
             apiFormat: "openai",
-            models: ["gpt-image-2", "grok-imagine-video", "gpt-5.5", "gpt-4o-mini-tts"],
+            models: DUOMI_MODELS,
         },
     ],
     model: "default::gpt-image-2",
     imageModel: "default::gpt-image-2",
-    videoModel: "default::grok-imagine-video",
-    textModel: "default::gpt-5.5",
-    audioModel: "default::gpt-4o-mini-tts",
+    videoModel: "default::grok-video",
+    textModel: "",
+    audioModel: "",
     audioVoice: "alloy",
     audioFormat: "mp3",
     audioSpeed: "1",
@@ -89,12 +91,12 @@ export const defaultConfig: AiConfig = {
     videoGenerateAudio: "true",
     videoWatermark: "false",
     systemPrompt: "",
-    models: ["default::gpt-image-2", "default::grok-imagine-video", "default::gpt-5.5", "default::gpt-4o-mini-tts"],
+    models: DUOMI_MODELS.map((model) => `default::${model}`),
     imageModels: ["default::gpt-image-2"],
-    videoModels: ["default::grok-imagine-video"],
-    textModels: ["default::gpt-5.5"],
-    audioModels: ["default::gpt-4o-mini-tts"],
-    quality: "auto",
+    videoModels: DUOMI_MODELS.slice(1).map((model) => `default::${model}`),
+    textModels: [],
+    audioModels: [],
+    quality: "high",
     size: "1:1",
     count: "1",
     canvasImageCount: "3",
@@ -199,7 +201,8 @@ export const useConfigStore = create<ConfigStore>()(
             partialize: (state) => ({ config: state.config, webdav: state.webdav }),
             merge: (persisted, current) => {
                 const persistedState = (persisted || {}) as Partial<ConfigStore>;
-                const persistedConfig = (persistedState.config || {}) as Partial<AiConfig>;
+                const rawPersistedConfig = (persistedState.config || {}) as Partial<AiConfig>;
+                const persistedConfig = isUntouchedOpenAiDefault(rawPersistedConfig) ? {} : rawPersistedConfig;
                 const persistedWebdav = (persistedState.webdav || {}) as Partial<WebdavSyncConfig>;
                 const config = { ...defaultConfig, ...persistedConfig };
                 if (!Array.isArray(persistedConfig.channels)) config.channels = [];
@@ -237,6 +240,12 @@ export const useConfigStore = create<ConfigStore>()(
         },
     ),
 );
+
+function isUntouchedOpenAiDefault(config: Partial<AiConfig>) {
+    if (!Array.isArray(config.channels) || config.channels.length !== 1) return false;
+    const channel = config.channels[0];
+    return channel?.id === "default" && channel.baseUrl === OPENAI_BASE_URL && !channel.apiKey?.trim();
+}
 
 function normalizeModelList(models: string[], channels: ModelChannel[]) {
     const allModelOptions = channels.flatMap((channel) => channel.models.map((model) => encodeChannelModel(channel.id, model)));

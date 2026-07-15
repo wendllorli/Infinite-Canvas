@@ -660,7 +660,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
         }
     }
     const quality = normalizeQuality(config.quality);
-    const requestSize = resolveRequestSize(quality, config.size);
+    const requestSize = isDuomiAdapterBaseUrl(requestConfig.baseUrl) && config.size.includes(":") ? config.size.trim() : resolveRequestSize(quality, config.size);
     try {
         const response = await axios.post<ImageApiResponse>(
             aiApiUrl(requestConfig, "/images/generations"),
@@ -698,7 +698,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
         }
     }
     const quality = normalizeQuality(config.quality);
-    const requestSize = resolveRequestSize(quality, config.size);
+    const requestSize = isDuomiAdapterBaseUrl(requestConfig.baseUrl) && config.size.includes(":") ? config.size.trim() : resolveRequestSize(quality, config.size);
     if (isDuomiAdapterBaseUrl(requestConfig.baseUrl)) {
         try {
             const files = mask ? [] : await Promise.all(references.map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
