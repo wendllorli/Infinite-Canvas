@@ -3,6 +3,7 @@ import { AdapterError } from "../../duomi-adapter/src/errors.js";
 import { GROK_MODELS, IMAGE_MIME_TYPES, QUALITY_VALUES, VEO_MODELS, canonicalVideoModel, imageUrls, mapVideoTask, validateVideoReferenceCount, videoPayload } from "../../duomi-adapter/src/media.js";
 import { fetchDuomiResultImage } from "../../duomi-adapter/src/media-proxy.js";
 import type { AdapterConfig, AdapterErrorBody, DuomiImageRequest } from "../../duomi-adapter/src/types.js";
+import { siteAuthResponse } from "./site-auth.js";
 
 export interface Env {
     ASSETS?: Fetcher;
@@ -15,6 +16,7 @@ export interface Env {
     DUOMI_IMAGE_MODEL?: string;
     DUOMI_VIDEO_MODELS?: string;
     STORAGE_PUBLIC_BASE_URL?: string;
+    SITE_PASSWORD?: string;
 }
 
 const API_PREFIX = "/api/duomi";
@@ -34,6 +36,9 @@ export default {
 } satisfies ExportedHandler<Env>;
 
 export async function handleRequest(request: Request, env: Env, fetchImpl: typeof fetch = fetch): Promise<Response> {
+    const authResponse = await siteAuthResponse(request, env.SITE_PASSWORD);
+    if (authResponse) return authResponse;
+
     const url = new URL(request.url);
     if (!url.pathname.startsWith(`${API_PREFIX}/`) && url.pathname !== API_PREFIX) {
         return env.ASSETS ? env.ASSETS.fetch(request) : json({ error: { message: "Not found", type: "not_found" } }, 404);

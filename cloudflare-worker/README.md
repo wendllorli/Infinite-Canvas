@@ -17,7 +17,7 @@ Copy-Item .dev.vars.example .dev.vars  # Windows PowerShell
 npm run dev
 ```
 
-macOS/Linux 使用 `cp .dev.vars.example .dev.vars`。在 `.dev.vars` 中填写真实 `DUOMI_API_KEY`，该文件已被 `.gitignore` 排除。默认本地地址为 Wrangler 输出的 `http://localhost:8787`，健康检查路径为 `/api/duomi/health`。
+macOS/Linux 使用 `cp .dev.vars.example .dev.vars`。在 `.dev.vars` 中填写真实 `DUOMI_API_KEY` 和本地使用的 `SITE_PASSWORD`，该文件已被 `.gitignore` 排除。默认本地地址为 Wrangler 输出的 `http://localhost:8787`，健康检查路径为 `/api/duomi/health`。
 
 检查命令：
 
@@ -40,7 +40,10 @@ npm run build
 ```bash
 cd cloudflare-worker
 npx wrangler secret put DUOMI_API_KEY
+npx wrangler secret put SITE_PASSWORD
 ```
+
+设置 `SITE_PASSWORD` 后，Worker 会在网页和全部 `/api/duomi/*` 接口前增加口令锁。口令只保存在 Worker Secret，不会写入网页代码或 Git；验证成功后使用 HttpOnly Cookie 保持当前浏览器会话。
 
 `DUOMI_API_BASE`、鉴权模式、模型和轮询参数是 `wrangler.jsonc` 中的非敏感变量。免费版默认轮询间隔为 15000ms，十分钟任务最多使用 41 次 Duomi 上游请求。`/v1/media` 会通过同域代理读取 Duomi 结果图片，避免部分 OSS 临时地址缺少 CORS 响应头而无法写入画布。
 

@@ -40,6 +40,46 @@ function directEnv(overrides: Partial<Env> = {}): Env {
 }
 
 describe("Cloudflare Worker routes", () => {
+    it("locks the site and Duomi API until the correct password is entered", async () => {
+        const protectedEnv = directEnv({ SITE_PASSWORD: "test-password", ASSETS: { fetch: async () => new Response("spa-index") } as unknown as Fetcher });
+        const page = await handleRequest(new Request("https://canvas.test/", { headers: { Accept: "text/html" } }), protectedEnv);
+        const html = await page.text();
+        expect(page.status).toBe(200);
+        expect(html).toContain("请输入访问口令");
+        expect(html).not.toContain("test-password");
+
+        const lockedApi = await handleRequest(new Request("https://canvas.test/api/duomi/health"), protectedEnv);
+        expect(lockedApi.status).toBe(401);
+        expect(await lockedApi.json()).toEqual({ error: { message: "请先输入访问口令解锁画布", type: "site_locked" } });
+
+        const wrong = await handleRequest(
+            new Request("https://canvas.test/api/site-auth/unlock", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ password: "wrong" }),
+            }),
+            protectedEnv,
+        );
+        expect(wrong.status).toBe(401);
+        expect(wrong.headers.get("set-cookie")).toBeNull();
+
+        const unlocked = await handleRequest(
+            new Request("https://canvas.test/api/site-auth/unlock", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ password: "test-password" }),
+            }),
+            protectedEnv,
+        );
+        expect(unlocked.status).toBe(200);
+        const cookie = unlocked.headers.get("set-cookie")?.split(";", 1)[0];
+        expect(cookie).toMatch(/^infinite_canvas_session=/);
+
+        const health = await handleRequest(new Request("https://canvas.test/api/duomi/health", { headers: { Cookie: cookie! } }), protectedEnv);
+        expect(health.status).toBe(200);
+        expect(await health.json()).toEqual({ ok: true, service: "duomi-adapter" });
+    });
+
     it("serves health and models without exposing the secret", async () => {
         const health = await runtime.dispatchFetch("https://canvas.test/api/duomi/health");
         expect(await health.json()).toEqual({ ok: true, service: "duomi-adapter" });
