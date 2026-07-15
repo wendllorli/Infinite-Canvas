@@ -86,7 +86,9 @@ grok-video
 grok-video-1.5
 ```
 
-VEO 时长固定为 8 秒，最多 3 张参考图；`REFERENCE` 模式不支持 9:16。`grok-video` 最多 7 张参考图，`grok-video-1.5` 最多 1 张，Grok 单张参考图最大 10 MB。当前明确拒绝 mask 蒙版重绘。
+VEO 时长固定为 8 秒，可选 720p、1080p、4K；Grok Video 和 Grok Video 1.5 可选 6、10、15 秒，固定为 720p。画布只显示横屏 16:9 和竖屏 9:16，视频任务每 60 秒查询一次，不设置主动超时，直到任务成功或失败。
+
+VEO 最多 3 张参考图；`REFERENCE` 模式不支持 9:16。`grok-video` 最多 7 张参考图，`grok-video-1.5` 最多 1 张，Grok 单张参考图最大 10 MB。当前明确拒绝 mask 蒙版重绘。
 
 生产环境将 Base URL 换成 `https://canvas.example.com/api/duomi/v1`。`local-duomi` 只是满足前端必填检查的占位值，不是真实 Duomi 密钥，也不能保护公开接口；公开部署应通过站点登录、VPN 或外部网关限制访问。
 

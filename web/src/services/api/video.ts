@@ -5,6 +5,7 @@ import { isDuomiAdapterBaseUrl, uploadDuomiImages } from "@/services/api/duomi";
 import { getMediaBlob, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
 import { boolConfig, buildSeedancePromptText, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
+import { normalizeDuomiVideoRatio, normalizeDuomiVideoResolution, normalizeDuomiVideoSeconds } from "@/lib/duomi-video";
 import { buildApiUrl, modelOptionName, resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
@@ -23,6 +24,8 @@ type SeedanceTask = {
 type ApiEnvelope<T> = T | { code?: number | string; data?: T | null; msg?: string; message?: string; error?: { message?: string } };
 type RequestOptions = { signal?: AbortSignal };
 
+export const VIDEO_TASK_POLL_INTERVAL_MS = 60_000;
+
 export type VideoGenerationResult = { blob?: Blob; url?: string; mimeType?: string };
 export type VideoGenerationTask = { id: string; provider: "openai" | "seedance"; model: string };
 export type VideoGenerationTaskState = { status: "pending" } | { status: "completed"; result: VideoGenerationResult } | { status: "failed"; error: string };
@@ -40,16 +43,17 @@ function aiHeaders(config: AiConfig, contentType?: string) {
 
 export async function requestVideoGeneration(config: AiConfig, prompt: string, references: ReferenceImage[] = [], videoReferences: ReferenceVideo[] = [], audioReferences: ReferenceAudio[] = [], options?: RequestOptions): Promise<VideoGenerationResult> {
     const task = await createVideoGenerationTask(config, prompt, references, videoReferences, audioReferences, options);
-    const delayMs = task.provider === "seedance" ? 5000 : 2500;
-    for (let attempt = 0; attempt < 120; attempt += 1) {
+    return waitForVideoGenerationTask(config, task, options);
+}
+
+export async function waitForVideoGenerationTask(config: AiConfig, task: VideoGenerationTask, options?: RequestOptions): Promise<VideoGenerationResult> {
+    for (;;) {
         if (options?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
         const state = await pollVideoGenerationTask(config, task, options);
         if (state.status === "completed") return state.result;
         if (state.status === "failed") throw new Error(state.error);
-        if (attempt === 119) throw new Error(`${task.provider === "seedance" ? "Seedance " : ""}视频生成超时，请稍后重试`);
-        await delay(delayMs, options?.signal);
+        await delay(VIDEO_TASK_POLL_INTERVAL_MS, options?.signal);
     }
-    throw new Error("视频生成超时，请稍后重试");
 }
 
 export async function createVideoGenerationTask(config: AiConfig, prompt: string, references: ReferenceImage[] = [], videoReferences: ReferenceVideo[] = [], audioReferences: ReferenceAudio[] = [], options?: RequestOptions): Promise<VideoGenerationTask> {
@@ -88,16 +92,17 @@ async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: st
         try {
             const files = await Promise.all(references.slice(0, 7).map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
             const image_urls = await uploadDuomiImages(config, files, options?.signal);
+            const duomiModel = modelOptionName(model);
             const created = unwrapVideoResponse(
                 (
                     await axios.post<ApiVideoResponse>(
                         aiApiUrl(config, "/videos"),
                         {
-                            model: modelOptionName(model),
+                            model: duomiModel,
                             prompt,
-                            seconds: normalizeVideoSeconds(config.videoSeconds),
-                            ...(normalizeVideoSize(config.size) ? { size: normalizeVideoSize(config.size) } : {}),
-                            resolution_name: normalizeVideoResolution(config.vquality),
+                            seconds: normalizeDuomiVideoSeconds(duomiModel, config.videoSeconds),
+                            size: normalizeDuomiVideoRatio(config.size),
+                            resolution_name: normalizeDuomiVideoResolution(duomiModel, config.vquality),
                             image_urls,
                         },
                         { headers: aiHeaders(config, "application/json"), signal: options?.signal },
@@ -284,6 +289,7 @@ function normalizeVideoSize(value: string) {
 }
 
 function normalizeVideoResolution(value: string) {
+    if (/^4k(p)?$/i.test(value)) return "4k";
     if (value === "low") return "480p";
     if (value === "auto" || value === "high" || value === "medium") return "720p";
     const resolution = value.replace(/p$/i, "") || "720";

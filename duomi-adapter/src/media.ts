@@ -38,7 +38,7 @@ export function videoPayload(model: string, prompt: string, size: string, second
         return { model, prompt, aspect_ratio: aspectRatio === "9:16" ? "9:16" : "16:9", duration: 8, quality, generation_type: generationType, ...(urls.length ? { image_urls: urls } : {}) };
     }
     const duration = Math.floor(Number(seconds) || 6);
-    const allowed = model === "grok-video-1.5" ? [6, 10, 15] : [6, 10, 15, 20, 25, 30];
+    const allowed = [6, 10, 15];
     if (!allowed.includes(duration)) throw new AdapterError(400, `${model} duration must be one of: ${allowed.join(", ")}`, "invalid_request_error");
     return { model, prompt, aspect_ratio: grokRatio(aspectRatio), duration, quality: "720p", ...(urls.length ? { image_urls: urls } : {}) };
 }

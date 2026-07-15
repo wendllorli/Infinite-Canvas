@@ -215,6 +215,18 @@ describe("video adapter", () => {
         expect(await polled.json()).toEqual({ id: "video-task", status: "completed", url: "https://cdn.test/video.mp4" });
     });
 
+    it("rejects Grok durations outside the fixed 6, 10, and 15 second options", async () => {
+        const upstream = await mockServer((_request, response) => json(response, { id: "unexpected-task" }));
+        const { base } = await startAdapter(upstream);
+        const response = await fetch(`${base}/v1/videos`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model: "grok-video", prompt: "move", seconds: "20", size: "16:9", resolution_name: "720p", image_urls: [] }),
+        });
+        expect(response.status).toBe(400);
+        expect(await response.json()).toEqual({ error: { message: "grok-video duration must be one of: 6, 10, 15", type: "invalid_request_error" } });
+    });
+
     it("uploads VEO first and last frame references", async () => {
         let submitted: Record<string, unknown> | undefined;
         const upstream = await mockServer((request, response, body) => {

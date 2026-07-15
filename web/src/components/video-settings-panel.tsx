@@ -1,9 +1,10 @@
-import { type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { Switch } from "antd";
 
 import { ImageSettingsTheme } from "@/components/image-settings-panel";
 import { boolConfig, isSeedanceFastModel, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceDurationOptions, seedancePixelLabel, seedanceRatioOptions, seedanceResolutionOptions } from "@/lib/seedance-video";
 import { type CanvasTheme } from "@/lib/canvas-theme";
+import { duomiVideoRatioOptions, duomiVideoResolutionOptions, duomiVideoSecondOptions, isDuomiVideoModel, isVeoVideoModel, normalizeDuomiVideoRatio, normalizeDuomiVideoResolution, normalizeDuomiVideoSeconds } from "@/lib/duomi-video";
 import { modelOptionName, type AiConfig } from "@/stores/use-config-store";
 
 const resolutionOptions = [
@@ -22,9 +23,13 @@ const sizeOptions = [
 
 const secondOptions = [6, 10, 12, 16, 20];
 
-export const videoResolutionOptions = resolutionOptions.map((item) => ({ value: item.value, label: item.label }));
-export const videoSizeOptions = sizeOptions.map((item) => ({ value: item.value, label: item.label }));
-export const videoSecondOptions = secondOptions.map((value) => String(value));
+export const videoResolutionOptions = [
+    { value: "720p", label: "720p" },
+    { value: "1080p", label: "1080p" },
+    { value: "4k", label: "4K" },
+];
+export const videoSizeOptions = duomiVideoRatioOptions.map((item) => ({ value: item.value, label: item.label }));
+export const videoSecondOptions = ["6", "8", "10", "15"];
 
 type VideoSettingsPanelProps = {
     config: AiConfig;
@@ -37,6 +42,10 @@ type VideoSettingsPanelProps = {
 export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5" }: VideoSettingsPanelProps) {
     if (isSeedanceVideoConfig(config)) {
         return <SeedanceVideoSettingsPanel config={config} onConfigChange={onConfigChange} theme={theme} showTitle={showTitle} className={className} />;
+    }
+    const model = modelOptionName(config.model || config.videoModel);
+    if (isDuomiVideoModel(model)) {
+        return <DuomiVideoSettingsPanel config={config} onConfigChange={onConfigChange} theme={theme} showTitle={showTitle} className={className} />;
     }
 
     const seconds = config.videoSeconds || "6";
@@ -98,6 +107,67 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
                         ))}
                         <NumberInput value={seconds} min={1} max={20} theme={theme} onChange={(value) => onConfigChange("videoSeconds", value)} />
                     </div>
+                </SettingGroup>
+            </div>
+        </ImageSettingsTheme>
+    );
+}
+
+function DuomiVideoSettingsPanel({ config, onConfigChange, theme, showTitle, className }: VideoSettingsPanelProps) {
+    const model = modelOptionName(config.model || config.videoModel);
+    const resolution = normalizeDuomiVideoResolution(model, config.vquality || "720p");
+    const ratio = normalizeDuomiVideoRatio(config.size);
+    const seconds = normalizeDuomiVideoSeconds(model, config.videoSeconds);
+    const resolutions = duomiVideoResolutionOptions(model);
+    const durations = duomiVideoSecondOptions(model);
+
+    useEffect(() => {
+        if (config.vquality !== resolution) onConfigChange("vquality", resolution);
+        if (config.size !== ratio) onConfigChange("size", ratio);
+        if (config.videoSeconds !== seconds) onConfigChange("videoSeconds", seconds);
+    }, [config.size, config.videoSeconds, config.vquality, onConfigChange, ratio, resolution, seconds]);
+
+    return (
+        <ImageSettingsTheme theme={theme}>
+            <div className={className} style={{ color: theme.node.text }} onMouseDown={(event) => event.stopPropagation()}>
+                {showTitle ? <div className="text-lg font-semibold">视频设置</div> : null}
+                <SettingGroup title="清晰度" color={theme.node.muted}>
+                    <div className={`grid gap-2.5 ${resolutions.length === 1 ? "grid-cols-1" : "grid-cols-3"}`}>
+                        {resolutions.map((item) => (
+                            <OptionPill key={item.value} selected={resolution === item.value} theme={theme} onClick={() => onConfigChange("vquality", item.value)}>
+                                {item.label}
+                            </OptionPill>
+                        ))}
+                    </div>
+                    {!isVeoVideoModel(model) ? <div className="text-[11px] leading-4 opacity-55">Grok Video 固定使用 720p。</div> : null}
+                </SettingGroup>
+                <SettingGroup title="比例" color={theme.node.muted}>
+                    <div className="grid grid-cols-2 gap-2.5">
+                        {duomiVideoRatioOptions.map((item) => (
+                            <button
+                                key={item.value}
+                                type="button"
+                                className="flex h-[72px] cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border bg-transparent text-sm transition hover:opacity-80"
+                                style={{ borderColor: ratio === item.value ? theme.node.text : theme.node.stroke, color: theme.node.text }}
+                                onMouseDown={(event) => event.stopPropagation()}
+                                onClick={() => onConfigChange("size", item.value)}
+                            >
+                                <SizePreview width={item.width} height={item.height} color={theme.node.text} />
+                                <span>{item.label}</span>
+                                <span className="text-[11px] leading-none opacity-55">{item.value}</span>
+                            </button>
+                        ))}
+                    </div>
+                </SettingGroup>
+                <SettingGroup title="秒数" color={theme.node.muted}>
+                    <div className={`grid gap-2.5 ${durations.length === 1 ? "grid-cols-1" : "grid-cols-3"}`}>
+                        {durations.map((value) => (
+                            <OptionPill key={value} selected={seconds === String(value)} theme={theme} onClick={() => onConfigChange("videoSeconds", String(value))}>
+                                {value}s
+                            </OptionPill>
+                        ))}
+                    </div>
+                    {isVeoVideoModel(model) ? <div className="text-[11px] leading-4 opacity-55">VEO 视频时长固定为 8 秒。</div> : null}
                 </SettingGroup>
             </div>
         </ImageSettingsTheme>
@@ -169,10 +239,13 @@ function SeedanceVideoSettingsPanel({ config, onConfigChange, theme, showTitle, 
 }
 
 export function videoResolutionLabel(value: string) {
-    return `${normalizeVideoResolutionValue(value)}p`;
+    const normalized = normalizeVideoResolutionValue(value);
+    return normalized === "4k" ? "4K" : `${normalized}p`;
 }
 
 export function videoSizeLabel(value: string) {
+    if (["16:9", "1280x720", "1792x1024"].includes(value)) return "横屏";
+    if (["9:16", "720x1280", "1024x1792"].includes(value)) return "竖屏";
     const ratio = normalizeSeedanceRatio(value);
     if (value === "adaptive" || value === "auto") return "自适应";
     if (ratio === value) return seedanceRatioOptions.find((item) => item.value === ratio)?.label || ratio;
@@ -192,6 +265,7 @@ export function normalizeVideoSizeValue(value: string) {
 }
 
 export function normalizeVideoResolutionValue(value: string) {
+    if (/^4k(p)?$/i.test(value)) return "4k";
     if (value === "480p" || value === "low") return "480";
     if (value === "720p" || value === "auto" || value === "high" || value === "medium") return "720";
     return value.replace(/p$/i, "") || "720";
