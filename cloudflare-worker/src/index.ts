@@ -1,6 +1,6 @@
 import { DuomiClient } from "../../duomi-adapter/src/duomi-client.js";
 import { AdapterError } from "../../duomi-adapter/src/errors.js";
-import { GROK_MODELS, IMAGE_MIME_TYPES, QUALITY_VALUES, VEO_MODELS, canonicalVideoModel, imageUrls, mapVideoTask, validateVideoReferenceCount, videoPayload } from "../../duomi-adapter/src/media.js";
+import { GROK_MODELS, IMAGE_MIME_TYPES, KLING_MODELS, QUALITY_VALUES, VEO_MODELS, canonicalVideoModel, imageUrls, mapVideoTask, validateVideoReferenceCount, videoPayload } from "../../duomi-adapter/src/media.js";
 import { fetchDuomiResultImage } from "../../duomi-adapter/src/media-proxy.js";
 import type { AdapterConfig, AdapterErrorBody, DuomiImageRequest } from "../../duomi-adapter/src/types.js";
 import { siteAuthResponse } from "./site-auth.js";
@@ -82,7 +82,7 @@ function workerConfig(env: Env): AdapterConfig {
         pollIntervalMs: positiveInteger(env.DUOMI_POLL_INTERVAL_MS, DEFAULT_POLL_INTERVAL_MS, "DUOMI_POLL_INTERVAL_MS"),
         timeoutMs: positiveInteger(env.DUOMI_TIMEOUT_MS, DEFAULT_TIMEOUT_MS, "DUOMI_TIMEOUT_MS"),
         imageModel: env.DUOMI_IMAGE_MODEL?.trim() || "gpt-image-2",
-        videoModels: csv(env.DUOMI_VIDEO_MODELS, ["veo3.1-fast", "veo3.1-pro", "grok-video", "grok-video-1.5"]),
+        videoModels: csv(env.DUOMI_VIDEO_MODELS, ["veo3.1-fast", "veo3.1-pro", "grok-video", "grok-video-1.5", "kling-v1-6"]),
     };
 }
 
@@ -208,7 +208,7 @@ function field(form: FormData, name: string) {
 
 function videoModel(value: string) {
     const model = canonicalVideoModel(value);
-    if (!VEO_MODELS.has(model) && !GROK_MODELS.has(model)) throw new AdapterError(400, `Unsupported Duomi video model: ${model || "empty"}`, "invalid_request_error");
+    if (!VEO_MODELS.has(model) && !GROK_MODELS.has(model) && !KLING_MODELS.has(model)) throw new AdapterError(400, `Unsupported Duomi video model: ${model || "empty"}`, "invalid_request_error");
     return model;
 }
 

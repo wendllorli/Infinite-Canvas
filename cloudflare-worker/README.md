@@ -72,6 +72,8 @@ API Key：local-duomi
 
 `local-duomi` 只是前端必填占位值。参考图会逐张调用 `/v1/uploads` 上传，随后以公网 URL 数组提交图生图或视频任务，避免 Cloudflare 单请求 100MB 限制。
 
+视频模型同时包含 `veo3.1-fast`、`veo3.1-pro`、`grok-video`、`grok-video-1.5` 和 `kling-v1-6`。可灵会复用同一 R2 binding，把公网参考图 URL 转换为 `image_list` 后调用多图参考生视频接口，不需要增加新的 Cloudflare Secret。
+
 ## 回滚
 
 Cloudflare 会保留 Worker 部署版本。生产冒烟失败时，在 **Deployments** 中选择上一个成功版本执行 Rollback，不要在回滚时删除 R2 bucket 或 Secret。

@@ -54,7 +54,14 @@ export type DuomiImageRequest = {
     image?: string[];
 };
 
-export type DuomiCreatedTask = { id?: unknown };
+export type DuomiCreatedTask = {
+    id?: unknown;
+    task_id?: unknown;
+    code?: unknown;
+    message?: unknown;
+    msg?: unknown;
+    data?: { id?: unknown; task_id?: unknown } | null;
+};
 
 export type DuomiMedia = { url?: unknown; file_name?: unknown };
 
@@ -66,7 +73,7 @@ export type DuomiTask = {
     message?: unknown;
 };
 
-export type DuomiVideoRequest = {
+export type DuomiStandardVideoRequest = {
     model: string;
     prompt: string;
     aspect_ratio: string;
@@ -75,6 +82,34 @@ export type DuomiVideoRequest = {
     generation_type?: "TEXT" | "FIRST&LAST" | "REFERENCE";
     quality: string;
 };
+
+export type DuomiKlingVideoRequest = {
+    model_name: string;
+    image_list: Array<{ image: string }>;
+    prompt: string;
+    negative_prompt: string;
+    mode: "std";
+    duration: string;
+    aspect_ratio: "16:9" | "9:16";
+};
+
+export type DuomiVideoRequest = DuomiStandardVideoRequest | DuomiKlingVideoRequest;
+
+export type DuomiKlingTask = {
+    code?: unknown;
+    message?: unknown;
+    msg?: unknown;
+    data?: {
+        task_id?: unknown;
+        task_status?: unknown;
+        task_status_msg?: unknown;
+        task_result?: { videos?: unknown; images?: unknown } | null;
+    } | null;
+};
+
+export type DuomiVideoTaskResult =
+    | { provider: "standard"; task: DuomiTask }
+    | { provider: "kling"; task: DuomiKlingTask };
 
 export type AdapterErrorBody = {
     error: {

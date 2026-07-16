@@ -38,7 +38,7 @@ function config(apiBase: string, overrides: Partial<AdapterConfig> = {}): Adapte
         pollIntervalMs: 1,
         timeoutMs: 500,
         imageModel: "gpt-image-2",
-        videoModels: ["veo3.1-fast", "veo3.1-pro", "grok-video", "grok-video-1.5"],
+        videoModels: ["veo3.1-fast", "veo3.1-pro", "grok-video", "grok-video-1.5", "kling-v1-6"],
         ...overrides,
     };
 }
@@ -64,7 +64,7 @@ describe("V1 routes", () => {
     it("returns health and configured model", async () => {
         const app = await buildApp(config("http://127.0.0.1:1"));
         expect((await app.inject({ method: "GET", url: "/health" })).json()).toEqual({ ok: true, service: "duomi-adapter" });
-        expect((await app.inject({ method: "GET", url: "/v1/models" })).json().data.map((item: { id: string }) => item.id)).toEqual(["gpt-image-2", "veo3.1-fast", "veo3.1-pro", "grok-video", "grok-video-1.5"]);
+        expect((await app.inject({ method: "GET", url: "/v1/models" })).json().data.map((item: { id: string }) => item.id)).toEqual(["gpt-image-2", "veo3.1-fast", "veo3.1-pro", "grok-video", "grok-video-1.5", "kling-v1-6"]);
         await app.close();
     });
 

@@ -12,6 +12,7 @@
 + [优化] Cloudflare 画布默认预配置同域 Duomi 图片与视频模型，首次打开无需手工填写渠道。
 + [修复] 修复长耗时 Duomi 图片任务提前超时，以及部分 OSS 结果图片因 CORS 无法写入画布的问题。
 + [调整] Duomi 视频设置按 VEO/Grok 模型固定清晰度、横竖比例和时长，视频任务改为每 60 秒持续查询至成功或失败。
++ [新增] Duomi 视频适配新增可灵 `kling-v1-6` 多图参考生视频，复用 R2 公网参考图并映射可灵异步任务状态与结果。
 + [新增] Cloudflare Worker 新增服务端私人画布口令锁，同时保护网页和 Duomi API，口令仅保存在 Worker Secret。
 + [优化] 本地 Agent 连接说明明确区分插件 / 手动 MCP 才会增加 Codex token 消耗，直接运行 Agent 不受影响。
 + [优化] 优化本地 Agent 连接说明，区分 Codex 插件启动和直接运行 Agent 两种方式。

@@ -60,7 +60,7 @@ const CHANNEL_MODEL_SEPARATOR = "::";
 const OPENAI_BASE_URL = "https://api.openai.com";
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com";
 const DUOMI_BASE_URL = "/api/duomi/v1";
-const DUOMI_MODELS = ["gpt-image-2", "veo3.1-fast", "veo3.1-pro", "grok-video", "grok-video-1.5"];
+const DUOMI_MODELS = ["gpt-image-2", "veo3.1-fast", "veo3.1-pro", "grok-video", "grok-video-1.5", "kling-v1-6"];
 
 export const defaultConfig: AiConfig = {
     channelMode: "local",
@@ -231,7 +231,7 @@ export const useConfigStore = create<ConfigStore>()(
                         videoWatermark: config.videoWatermark || "false",
                         canvasImageCount: config.canvasImageCount || "3",
                         imageModels: Array.isArray(persistedConfig.imageModels) ? normalizeModelList(config.imageModels, channels) : filterModelsByCapability(models, "image"),
-                        videoModels: Array.isArray(persistedConfig.videoModels) ? normalizeModelList(config.videoModels, channels) : filterModelsByCapability(models, "video"),
+                        videoModels: ensureDuomiVideoModels(Array.isArray(persistedConfig.videoModels) ? normalizeModelList(config.videoModels, channels) : filterModelsByCapability(models, "video"), channels),
                         textModels: Array.isArray(persistedConfig.textModels) ? normalizeModelList(config.textModels, channels) : filterModelsByCapability(models, "text"),
                         audioModels: Array.isArray(persistedConfig.audioModels) ? normalizeModelList(config.audioModels, channels) : filterModelsByCapability(models, "audio"),
                     },
@@ -359,7 +359,22 @@ function normalizeChannels(config: AiConfig) {
             }),
         );
     }
-    return channels.map((channel) => ({ ...channel, models: uniqueRawModels(channel.models) }));
+    return channels.map((channel) => ({
+        ...channel,
+        models: uniqueRawModels([...channel.models, ...(isDuomiChannel(channel) ? DUOMI_MODELS : [])]),
+    }));
+}
+
+function ensureDuomiVideoModels(models: string[], channels: ModelChannel[]) {
+    const required = channels.flatMap((channel) =>
+        isDuomiChannel(channel) ? DUOMI_MODELS.slice(1).map((model) => encodeChannelModel(channel.id, model)) : [],
+    );
+    return normalizeModelList([...models, ...required], channels);
+}
+
+function isDuomiChannel(channel: Pick<ModelChannel, "baseUrl">) {
+    const baseUrl = channel.baseUrl.trim().replace(/\/+$/, "");
+    return baseUrl === DUOMI_BASE_URL || baseUrl.endsWith("/api/duomi/v1");
 }
 
 export function defaultBaseUrlForApiFormat(apiFormat: ApiCallFormat) {

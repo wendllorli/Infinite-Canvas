@@ -2,7 +2,7 @@ import type { FastifyPluginAsync, FastifyRequest } from "fastify";
 
 import { AdapterError } from "../errors.js";
 import type { DuomiClient } from "../duomi-client.js";
-import { GROK_MODELS, IMAGE_MIME_TYPES, VEO_MODELS, canonicalVideoModel, imageUrls, mapVideoTask, validateVideoReferenceCount, videoPayload } from "../media.js";
+import { GROK_MODELS, IMAGE_MIME_TYPES, KLING_MODELS, VEO_MODELS, canonicalVideoModel, imageUrls, mapVideoTask, validateVideoReferenceCount, videoPayload } from "../media.js";
 import type { ReferenceStorage } from "../storage.js";
 import type { AdapterConfig, VideoJsonRequest } from "../types.js";
 import { parseMultipart } from "../multipart.js";
@@ -52,7 +52,7 @@ async function multipartVideoRequest(request: FastifyRequest, storage?: Referenc
 
 function validateModel(value: string) {
     const model = canonicalVideoModel(value);
-    if (!VEO_MODELS.has(model) && !GROK_MODELS.has(model)) throw new AdapterError(400, `Unsupported Duomi video model: ${model || "empty"}`, "invalid_request_error");
+    if (!VEO_MODELS.has(model) && !GROK_MODELS.has(model) && !KLING_MODELS.has(model)) throw new AdapterError(400, `Unsupported Duomi video model: ${model || "empty"}`, "invalid_request_error");
     return model;
 }
 

@@ -4,7 +4,7 @@ import { Switch } from "antd";
 import { ImageSettingsTheme } from "@/components/image-settings-panel";
 import { boolConfig, isSeedanceFastModel, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceDurationOptions, seedancePixelLabel, seedanceRatioOptions, seedanceResolutionOptions } from "@/lib/seedance-video";
 import { type CanvasTheme } from "@/lib/canvas-theme";
-import { duomiVideoRatioOptions, duomiVideoResolutionOptions, duomiVideoSecondOptions, isDuomiVideoModel, isVeoVideoModel, normalizeDuomiVideoRatio, normalizeDuomiVideoResolution, normalizeDuomiVideoSeconds } from "@/lib/duomi-video";
+import { duomiVideoRatioOptions, duomiVideoResolutionOptions, duomiVideoSecondOptions, isDuomiVideoModel, isKlingVideoModel, isVeoVideoModel, normalizeDuomiVideoRatio, normalizeDuomiVideoResolution, normalizeDuomiVideoSeconds } from "@/lib/duomi-video";
 import { modelOptionName, type AiConfig } from "@/stores/use-config-store";
 
 const resolutionOptions = [
@@ -139,7 +139,7 @@ function DuomiVideoSettingsPanel({ config, onConfigChange, theme, showTitle, cla
                             </OptionPill>
                         ))}
                     </div>
-                    {!isVeoVideoModel(model) ? <div className="text-[11px] leading-4 opacity-55">Grok Video 固定使用 720p。</div> : null}
+                    {isKlingVideoModel(model) ? <div className="text-[11px] leading-4 opacity-55">可灵使用标准模式，输出清晰度由上游接口决定。</div> : !isVeoVideoModel(model) ? <div className="text-[11px] leading-4 opacity-55">Grok Video 固定使用 720p。</div> : null}
                 </SettingGroup>
                 <SettingGroup title="比例" color={theme.node.muted}>
                     <div className="grid grid-cols-2 gap-2.5">
@@ -168,6 +168,7 @@ function DuomiVideoSettingsPanel({ config, onConfigChange, theme, showTitle, cla
                         ))}
                     </div>
                     {isVeoVideoModel(model) ? <div className="text-[11px] leading-4 opacity-55">VEO 视频时长固定为 8 秒。</div> : null}
+                    {isKlingVideoModel(model) ? <div className="text-[11px] leading-4 opacity-55">可灵多图参考支持 5 秒或 10 秒，至少需要 1 张参考图。</div> : null}
                 </SettingGroup>
             </div>
         </ImageSettingsTheme>

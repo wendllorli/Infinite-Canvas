@@ -13,7 +13,7 @@ const bindings = {
     DUOMI_POLL_INTERVAL_MS: "15000",
     DUOMI_TIMEOUT_MS: "600000",
     DUOMI_IMAGE_MODEL: "gpt-image-2",
-    DUOMI_VIDEO_MODELS: "veo3.1-fast,veo3.1-pro,grok-video,grok-video-1.5",
+    DUOMI_VIDEO_MODELS: "veo3.1-fast,veo3.1-pro,grok-video,grok-video-1.5,kling-v1-6",
     STORAGE_PUBLIC_BASE_URL: "https://media.example.com",
 };
 
@@ -194,6 +194,55 @@ describe("Cloudflare Worker routes", () => {
         );
         expect(response.status).toBe(200);
         expect(payload).toMatchObject({ model: "veo3.1-fast", generation_type: "FIRST&LAST", image_urls: ["https://media.example.com/first.png", "https://media.example.com/last.png"] });
+    });
+
+    it("converts and polls a Kling multi-image video", async () => {
+        const calls: Array<{ url: string; body?: unknown }> = [];
+        const fetchImpl: typeof fetch = async (input, init) => {
+            const url = String(input);
+            calls.push({ url, ...(init?.body ? { body: JSON.parse(String(init.body)) } : {}) });
+            if (init?.method === "POST") return Response.json({ code: 0, data: { task_id: "worker-kling-task" } });
+            return Response.json({
+                code: 200,
+                data: {
+                    task_id: "worker-kling-task",
+                    task_status: "completed",
+                    task_status_msg: null,
+                    task_result: { images: null, videos: [{ id: "video-1", url: "https://cdn.test/worker-kling.mp4", duration: "10" }] },
+                },
+            });
+        };
+        const image_urls = ["https://media.example.com/a.png", "https://media.example.com/b.png"];
+        const created = await handleRequest(
+            new Request("https://canvas.test/api/duomi/v1/videos", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ model: "kling-v1-6", prompt: "pan across both characters", seconds: "10", size: "16:9", image_urls }),
+            }),
+            directEnv(),
+            fetchImpl,
+        );
+        expect(await created.json()).toEqual({ id: "kling:worker-kling-task", status: "queued" });
+        expect(calls[0]).toEqual({
+            url: "https://duomi.test/api/video/kling/v1/videos/multi-image2video",
+            body: {
+                model_name: "kling-v1-6",
+                image_list: image_urls.map((image) => ({ image })),
+                prompt: "pan across both characters",
+                negative_prompt: "",
+                mode: "std",
+                duration: "10",
+                aspect_ratio: "16:9",
+            },
+        });
+
+        const polled = await handleRequest(
+            new Request(`https://canvas.test/api/duomi/v1/videos/${encodeURIComponent("kling:worker-kling-task")}`),
+            directEnv(),
+            fetchImpl,
+        );
+        expect(await polled.json()).toEqual({ id: "kling:worker-kling-task", status: "completed", url: "https://cdn.test/worker-kling.mp4" });
+        expect(calls[1]?.url).toBe("https://duomi.test/api/video/kling/v1/videos/multi-image2video/worker-kling-task");
     });
 
     it("delegates non-API routes to the static asset binding", async () => {

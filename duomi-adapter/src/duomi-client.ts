@@ -1,5 +1,5 @@
 import { AdapterError, assertDuomiKey } from "./errors.js";
-import type { AdapterConfig, DuomiCreatedTask, DuomiImageRequest, DuomiMedia, DuomiTask, DuomiVideoRequest } from "./types.js";
+import type { AdapterConfig, DuomiCreatedTask, DuomiImageRequest, DuomiKlingTask, DuomiMedia, DuomiTask, DuomiVideoRequest, DuomiVideoTaskResult } from "./types.js";
 
 type ClientDependencies = {
     fetch?: typeof fetch;
@@ -54,15 +54,26 @@ export class DuomiClient {
     async createVideo(input: DuomiVideoRequest) {
         assertDuomiKey(this.config);
         const deadline = this.now() + this.config.timeoutMs;
-        const created = await this.requestJson<DuomiCreatedTask>("/v1/videos/generations", { method: "POST", body: JSON.stringify(input) }, deadline);
-        const id = stringValue(created.id);
+        const kling = "model_name" in input;
+        const path = kling ? "/api/video/kling/v1/videos/multi-image2video" : "/v1/videos/generations";
+        const created = await this.requestJson<DuomiCreatedTask>(path, { method: "POST", body: JSON.stringify(input) }, deadline);
+        assertSuccessfulEnvelope(created, "Duomi Kling video generation failed");
+        const id = taskId(created);
         if (!id) throw new AdapterError(502, "Duomi video generation did not return a task id", "invalid_upstream_response");
-        return id;
+        return kling ? `kling:${id}` : id;
     }
 
-    async getVideoTask(id: string) {
+    async getVideoTask(id: string): Promise<DuomiVideoTaskResult> {
         assertDuomiKey(this.config);
-        return this.requestJson<DuomiTask>(`/v1/videos/tasks/${encodeURIComponent(id)}`, { method: "GET" }, this.now() + this.config.timeoutMs);
+        if (id.startsWith("kling:")) {
+            const upstreamId = id.slice("kling:".length).trim();
+            if (!upstreamId) throw new AdapterError(400, "Kling task id is invalid", "invalid_request_error");
+            const task = await this.requestJson<DuomiKlingTask>(`/api/video/kling/v1/videos/multi-image2video/${encodeURIComponent(upstreamId)}`, { method: "GET" }, this.now() + this.config.timeoutMs);
+            assertSuccessfulEnvelope(task, "Duomi Kling task query failed");
+            return { provider: "kling", task };
+        }
+        const task = await this.requestJson<DuomiTask>(`/v1/videos/tasks/${encodeURIComponent(id)}`, { method: "GET" }, this.now() + this.config.timeoutMs);
+        return { provider: "standard", task };
     }
 
     private async requestJson<T>(path: string, init: RequestInit, deadline: number): Promise<T> {
@@ -140,6 +151,17 @@ function nestedMessage(value: unknown): string {
 
 function stringValue(value: unknown) {
     return typeof value === "string" ? value.trim() : "";
+}
+
+function taskId(created: DuomiCreatedTask) {
+    return stringValue(created.id) || stringValue(created.task_id) || stringValue(created.data?.id) || stringValue(created.data?.task_id);
+}
+
+function assertSuccessfulEnvelope(value: { code?: unknown; message?: unknown; msg?: unknown }, fallback: string) {
+    if (value.code === undefined || value.code === null || value.code === "") return;
+    const code = typeof value.code === "number" ? value.code : Number(value.code);
+    if (code === 0 || code === 200) return;
+    throw new AdapterError(502, stringValue(value.message) || stringValue(value.msg) || fallback, "duomi_api_error");
 }
 
 function timeoutError() {

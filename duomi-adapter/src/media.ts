@@ -1,10 +1,11 @@
 import { AdapterError } from "./errors.js";
-import type { DuomiTask, DuomiVideoRequest } from "./types.js";
+import type { DuomiKlingTask, DuomiTask, DuomiVideoRequest, DuomiVideoTaskResult } from "./types.js";
 
 export const IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 export const QUALITY_VALUES = new Set(["low", "medium", "high"]);
 export const VEO_MODELS = new Set(["veo3.1-fast", "veo3.1-pro"]);
 export const GROK_MODELS = new Set(["grok-video", "grok-video-1.5"]);
+export const KLING_MODELS = new Set(["kling-v1-6"]);
 
 export function imageUrls(value: unknown, maximum: number, required = true) {
     const values = Array.isArray(value) ? value : [];
@@ -37,6 +38,20 @@ export function videoPayload(model: string, prompt: string, size: string, second
         const quality = ["720p", "1080p", "4k"].includes(resolution) ? resolution : "720p";
         return { model, prompt, aspect_ratio: aspectRatio === "9:16" ? "9:16" : "16:9", duration: 8, quality, generation_type: generationType, ...(urls.length ? { image_urls: urls } : {}) };
     }
+    if (KLING_MODELS.has(model)) {
+        const duration = Math.floor(Number(seconds) || 5);
+        const allowed = [5, 10];
+        if (!allowed.includes(duration)) throw new AdapterError(400, `${model} duration must be one of: ${allowed.join(", ")}`, "invalid_request_error");
+        return {
+            model_name: model,
+            image_list: urls.map((image) => ({ image })),
+            prompt,
+            negative_prompt: "",
+            mode: "std",
+            duration: String(duration),
+            aspect_ratio: aspectRatio === "9:16" ? "9:16" : "16:9",
+        };
+    }
     const duration = Math.floor(Number(seconds) || 6);
     const allowed = [6, 10, 15];
     if (!allowed.includes(duration)) throw new AdapterError(400, `${model} duration must be one of: ${allowed.join(", ")}`, "invalid_request_error");
@@ -47,9 +62,13 @@ export function validateVideoReferenceCount(model: string, count: number) {
     if (VEO_MODELS.has(model) && count > 3) throw new AdapterError(400, "VEO supports at most 3 reference images", "invalid_request_error");
     if (model === "grok-video-1.5" && count > 1) throw new AdapterError(400, "grok-video-1.5 supports at most 1 reference image", "invalid_request_error");
     if (model === "grok-video" && count > 7) throw new AdapterError(400, "grok-video supports at most 7 reference images", "invalid_request_error");
+    if (KLING_MODELS.has(model) && count < 1) throw new AdapterError(400, "Kling multi-image video requires at least 1 reference image", "invalid_request_error");
+    if (KLING_MODELS.has(model) && count > 7) throw new AdapterError(400, "Kling supports at most 7 reference images", "invalid_request_error");
 }
 
-export function mapVideoTask(id: string, task: DuomiTask) {
+export function mapVideoTask(id: string, result: DuomiVideoTaskResult) {
+    if (result.provider === "kling") return mapKlingVideoTask(id, result.task);
+    const task = result.task;
     const state = fieldValue(task.state);
     if (state === "pending") return { id, status: "queued" };
     if (state === "running") return { id, status: "running" };
@@ -58,6 +77,22 @@ export function mapVideoTask(id: string, task: DuomiTask) {
     const rawVideos = task.data?.videos;
     const url = Array.isArray(rawVideos) ? rawVideos.map((item) => (item && typeof item === "object" ? fieldValue((item as { url?: unknown }).url) : "")).find(Boolean) : "";
     if (!url) throw new AdapterError(502, "Duomi video task succeeded but returned no video", "invalid_upstream_response");
+    return { id, status: "completed", url };
+}
+
+function mapKlingVideoTask(id: string, task: DuomiKlingTask) {
+    const state = fieldValue(task.data?.task_status).toLowerCase();
+    if (["pending", "queued", "submitted", "created", "waiting"].includes(state)) return { id, status: "queued" };
+    if (["running", "processing"].includes(state)) return { id, status: "running" };
+    if (["failed", "failure", "error", "cancelled", "canceled"].includes(state)) {
+        return { id, status: "failed", error: { message: fieldValue(task.data?.task_status_msg) || fieldValue(task.message) || fieldValue(task.msg) || "Duomi Kling video generation failed" } };
+    }
+    if (!["succeed", "succeeded", "success", "completed"].includes(state)) {
+        throw new AdapterError(502, `Duomi returned an unknown Kling task state${state ? `: ${state}` : ""}`, "invalid_upstream_response");
+    }
+    const rawVideos = task.data?.task_result?.videos;
+    const url = Array.isArray(rawVideos) ? rawVideos.map((item) => (item && typeof item === "object" ? fieldValue((item as { url?: unknown }).url) : "")).find(Boolean) : "";
+    if (!url) throw new AdapterError(502, "Duomi Kling video task succeeded but returned no video", "invalid_upstream_response");
     return { id, status: "completed", url };
 }
 

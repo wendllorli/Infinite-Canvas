@@ -57,7 +57,7 @@ function config(apiBase: string): AdapterConfig {
         pollIntervalMs: 1,
         timeoutMs: 500,
         imageModel: "gpt-image-2",
-        videoModels: ["veo3.1-fast", "veo3.1-pro", "grok-video", "grok-video-1.5"],
+        videoModels: ["veo3.1-fast", "veo3.1-pro", "grok-video", "grok-video-1.5", "kling-v1-6"],
     };
 }
 
@@ -189,6 +189,78 @@ describe("reference uploads", () => {
 });
 
 describe("video adapter", () => {
+    it("creates and polls a Kling multi-image video", async () => {
+        let submitted: Record<string, unknown> | undefined;
+        let queryCount = 0;
+        const upstream = await mockServer((request, response, body) => {
+            if (request.method === "POST") {
+                expect(request.url).toBe("/api/video/kling/v1/videos/multi-image2video");
+                submitted = JSON.parse(body) as Record<string, unknown>;
+                json(response, { code: 200, message: "success", data: { task_id: "kling-task" } });
+                return;
+            }
+            expect(request.url).toBe("/api/video/kling/v1/videos/multi-image2video/kling-task");
+            queryCount += 1;
+            json(response, {
+                code: 0,
+                message: "success",
+                data: {
+                    task_id: "kling-task",
+                    task_status: queryCount === 1 ? "processing" : "succeed",
+                    task_status_msg: null,
+                    task_result: queryCount === 1 ? null : { images: null, videos: [{ id: "video-1", url: "https://cdn.test/kling.mp4", duration: "5" }] },
+                },
+            });
+        });
+        const { base } = await startAdapter(upstream);
+        const image_urls = ["https://media.example.com/first.png", "https://media.example.com/second.png"];
+        const created = await fetch(`${base}/v1/videos`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model: "kling-v1-6", prompt: "the characters wave", seconds: "5", size: "9:16", image_urls }),
+        });
+        expect(created.status).toBe(200);
+        expect(await created.json()).toEqual({ id: "kling:kling-task", status: "queued" });
+        expect(submitted).toEqual({
+            model_name: "kling-v1-6",
+            image_list: image_urls.map((image) => ({ image })),
+            prompt: "the characters wave",
+            negative_prompt: "",
+            mode: "std",
+            duration: "5",
+            aspect_ratio: "9:16",
+        });
+
+        const running = await fetch(`${base}/v1/videos/${encodeURIComponent("kling:kling-task")}`);
+        expect(await running.json()).toEqual({ id: "kling:kling-task", status: "running" });
+        const completed = await fetch(`${base}/v1/videos/${encodeURIComponent("kling:kling-task")}`);
+        expect(await completed.json()).toEqual({ id: "kling:kling-task", status: "completed", url: "https://cdn.test/kling.mp4" });
+    });
+
+    it("maps Kling failures and rejects requests without reference images", async () => {
+        const upstream = await mockServer((request, response) => {
+            if (request.method === "POST") json(response, { data: { task_id: "failed-kling-task" } });
+            else json(response, { code: 200, data: { task_status: "failed", task_status_msg: "content policy rejected", task_result: null } });
+        });
+        const { base } = await startAdapter(upstream);
+        const missingReference = await fetch(`${base}/v1/videos`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model: "kling-v1-6", prompt: "move", seconds: "5", size: "16:9", image_urls: [] }),
+        });
+        expect(missingReference.status).toBe(400);
+        expect(await missingReference.json()).toEqual({ error: { message: "Kling multi-image video requires at least 1 reference image", type: "invalid_request_error" } });
+
+        const created = await fetch(`${base}/v1/videos`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model: "kling-v1-6", prompt: "move", seconds: "10", size: "16:9", image_urls: ["https://media.example.com/a.png"] }),
+        });
+        expect(created.status).toBe(200);
+        const failed = await fetch(`${base}/v1/videos/${encodeURIComponent("kling:failed-kling-task")}`);
+        expect(await failed.json()).toEqual({ id: "kling:failed-kling-task", status: "failed", error: { message: "content policy rejected" } });
+    });
+
     it("creates and polls a text-only Grok video", async () => {
         let submitted: Record<string, unknown> | undefined;
         const upstream = await mockServer((request, response, body) => {

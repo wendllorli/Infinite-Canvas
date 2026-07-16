@@ -4,7 +4,7 @@ export const duomiVideoRatioOptions = [
 ] as const;
 
 export function isDuomiVideoModel(model: string) {
-    return isVeoVideoModel(model) || isGrokVideoModel(model);
+    return isVeoVideoModel(model) || isGrokVideoModel(model) || isKlingVideoModel(model);
 }
 
 export function isVeoVideoModel(model: string) {
@@ -13,6 +13,10 @@ export function isVeoVideoModel(model: string) {
 
 export function isGrokVideoModel(model: string) {
     return /^grok-video(?:-1\.5)?$/i.test(model.trim());
+}
+
+export function isKlingVideoModel(model: string) {
+    return /^kling-v1-6$/i.test(model.trim());
 }
 
 export function duomiVideoResolutionOptions(model: string) {
@@ -26,7 +30,8 @@ export function duomiVideoResolutionOptions(model: string) {
 }
 
 export function duomiVideoSecondOptions(model: string) {
-    return isVeoVideoModel(model) ? [8] : [6, 10, 15];
+    if (isVeoVideoModel(model)) return [8];
+    return isKlingVideoModel(model) ? [5, 10] : [6, 10, 15];
 }
 
 export function normalizeDuomiVideoResolution(model: string, value: string) {
