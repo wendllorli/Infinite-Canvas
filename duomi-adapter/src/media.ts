@@ -5,7 +5,14 @@ export const IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"
 export const QUALITY_VALUES = new Set(["low", "medium", "high"]);
 export const VEO_MODELS = new Set(["veo3.1-fast", "veo3.1-pro"]);
 export const GROK_MODELS = new Set(["grok-video", "grok-video-1.5"]);
-export const KLING_MODELS = new Set(["kling-v1-6"]);
+export const KLING_MULTI_IMAGE_MODELS = new Set(["kling-v1-6"]);
+export const KLING_OMNI_MODELS = new Set(["kling-v3-omni"]);
+export const KLING_MODELS = new Set([...KLING_MULTI_IMAGE_MODELS, ...KLING_OMNI_MODELS]);
+
+type OmniVideoOptions = {
+    multiShot?: boolean;
+    multiPrompt?: unknown;
+};
 
 export function imageUrls(value: unknown, maximum: number, required = true) {
     const values = Array.isArray(value) ? value : [];
@@ -30,7 +37,7 @@ export function canonicalVideoModel(value: string) {
     return value.replace(/^veo_3\.1-/, "veo3.1-");
 }
 
-export function videoPayload(model: string, prompt: string, size: string, seconds: string, resolution: string, urls: string[]): DuomiVideoRequest {
+export function videoPayload(model: string, prompt: string, size: string, seconds: string, resolution: string, urls: string[], omniOptions: OmniVideoOptions = {}): DuomiVideoRequest {
     const aspectRatio = sizeToRatio(size);
     if (VEO_MODELS.has(model)) {
         const generationType = urls.length === 0 ? "TEXT" : urls.length <= 2 ? "FIRST&LAST" : "REFERENCE";
@@ -38,7 +45,7 @@ export function videoPayload(model: string, prompt: string, size: string, second
         const quality = ["720p", "1080p", "4k"].includes(resolution) ? resolution : "720p";
         return { model, prompt, aspect_ratio: aspectRatio === "9:16" ? "9:16" : "16:9", duration: 8, quality, generation_type: generationType, ...(urls.length ? { image_urls: urls } : {}) };
     }
-    if (KLING_MODELS.has(model)) {
+    if (KLING_MULTI_IMAGE_MODELS.has(model)) {
         const duration = Math.floor(Number(seconds) || 5);
         const allowed = [5, 10];
         if (!allowed.includes(duration)) throw new AdapterError(400, `${model} duration must be one of: ${allowed.join(", ")}`, "invalid_request_error");
@@ -52,6 +59,23 @@ export function videoPayload(model: string, prompt: string, size: string, second
             aspect_ratio: aspectRatio === "9:16" ? "9:16" : "16:9",
         };
     }
+    if (KLING_OMNI_MODELS.has(model)) {
+        const duration = Math.floor(Number(seconds) || 3);
+        if (duration < 3 || duration > 10) throw new AdapterError(400, `${model} duration must be between 3 and 10 seconds`, "invalid_request_error");
+        const multiShot = omniOptions.multiShot === true;
+        const multiPrompt = multiShot ? omniMultiPrompt(omniOptions.multiPrompt, duration) : undefined;
+        return {
+            model_name: model,
+            prompt,
+            mode: "std",
+            aspect_ratio: aspectRatio === "9:16" ? "9:16" : "16:9",
+            sound: "on",
+            duration: String(duration),
+            multi_shot: multiShot,
+            ...(multiPrompt ? { shot_type: "customize", multi_prompt: multiPrompt } : {}),
+            callback_url: "",
+        };
+    }
     const duration = Math.floor(Number(seconds) || 6);
     const allowed = [6, 10, 15];
     if (!allowed.includes(duration)) throw new AdapterError(400, `${model} duration must be one of: ${allowed.join(", ")}`, "invalid_request_error");
@@ -62,8 +86,9 @@ export function validateVideoReferenceCount(model: string, count: number) {
     if (VEO_MODELS.has(model) && count > 3) throw new AdapterError(400, "VEO supports at most 3 reference images", "invalid_request_error");
     if (model === "grok-video-1.5" && count > 1) throw new AdapterError(400, "grok-video-1.5 supports at most 1 reference image", "invalid_request_error");
     if (model === "grok-video" && count > 7) throw new AdapterError(400, "grok-video supports at most 7 reference images", "invalid_request_error");
-    if (KLING_MODELS.has(model) && count < 1) throw new AdapterError(400, "Kling multi-image video requires at least 1 reference image", "invalid_request_error");
-    if (KLING_MODELS.has(model) && count > 7) throw new AdapterError(400, "Kling supports at most 7 reference images", "invalid_request_error");
+    if (KLING_MULTI_IMAGE_MODELS.has(model) && count < 1) throw new AdapterError(400, "Kling multi-image video requires at least 1 reference image", "invalid_request_error");
+    if (KLING_MULTI_IMAGE_MODELS.has(model) && count > 7) throw new AdapterError(400, "Kling supports at most 7 reference images", "invalid_request_error");
+    if (KLING_OMNI_MODELS.has(model) && count > 0) throw new AdapterError(400, "Kling Omni reference images are not enabled because the upstream request schema does not define an image field", "unsupported_feature");
 }
 
 export function mapVideoTask(id: string, result: DuomiVideoTaskResult) {
@@ -94,6 +119,24 @@ function mapKlingVideoTask(id: string, task: DuomiKlingTask) {
     const url = Array.isArray(rawVideos) ? rawVideos.map((item) => (item && typeof item === "object" ? fieldValue((item as { url?: unknown }).url) : "")).find(Boolean) : "";
     if (!url) throw new AdapterError(502, "Duomi Kling video task succeeded but returned no video", "invalid_upstream_response");
     return { id, status: "completed", url };
+}
+
+function omniMultiPrompt(value: unknown, duration: number) {
+    if (!Array.isArray(value) || !value.length) throw new AdapterError(400, "multi_prompt is required when multi_shot is true", "invalid_request_error");
+    const shots = value.map((item, offset) => {
+        if (!item || typeof item !== "object" || Array.isArray(item)) throw new AdapterError(400, "multi_prompt entries must be objects", "invalid_request_error");
+        const record = item as Record<string, unknown>;
+        const index = Number(record.index);
+        const prompt = fieldValue(record.prompt);
+        const shotDuration = Math.floor(Number(record.duration));
+        if (!Number.isInteger(index) || index < 1 || !prompt || !Number.isInteger(shotDuration) || shotDuration < 1) {
+            throw new AdapterError(400, `multi_prompt entry ${offset + 1} is invalid`, "invalid_request_error");
+        }
+        return { index, prompt, duration: String(shotDuration) };
+    });
+    const total = shots.reduce((sum, shot) => sum + Number(shot.duration), 0);
+    if (total !== duration) throw new AdapterError(400, "multi_prompt durations must add up to the requested duration", "invalid_request_error");
+    return shots;
 }
 
 function sizeToRatio(value: string) {

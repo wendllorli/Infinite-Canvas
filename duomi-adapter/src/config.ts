@@ -26,7 +26,7 @@ export function loadConfig(): AdapterConfig {
         pollIntervalMs: positiveInteger("DUOMI_POLL_INTERVAL_MS", 15000),
         timeoutMs: positiveInteger("DUOMI_TIMEOUT_MS", 600000),
         imageModel: process.env.DUOMI_IMAGE_MODEL?.trim() || "gpt-image-2",
-        videoModels: csv("DUOMI_VIDEO_MODELS", ["veo3.1-fast", "veo3.1-pro", "grok-video", "grok-video-1.5", "kling-v1-6"]),
+        videoModels: csv("DUOMI_VIDEO_MODELS", ["veo3.1-fast", "veo3.1-pro", "grok-video", "grok-video-1.5", "kling-v1-6", "kling-v3-omni"]),
         storage: storageConfig(),
     };
 }

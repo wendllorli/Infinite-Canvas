@@ -5,7 +5,7 @@ import { isDuomiAdapterBaseUrl, uploadDuomiImages } from "@/services/api/duomi";
 import { getMediaBlob, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { imageToDataUrl } from "@/services/image-storage";
 import { boolConfig, buildSeedancePromptText, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceVideoReferenceError, SEEDANCE_REFERENCE_LIMITS } from "@/lib/seedance-video";
-import { isKlingVideoModel, normalizeDuomiVideoRatio, normalizeDuomiVideoResolution, normalizeDuomiVideoSeconds } from "@/lib/duomi-video";
+import { isKlingMultiImageVideoModel, isKlingOmniVideoModel, normalizeDuomiVideoRatio, normalizeDuomiVideoResolution, normalizeDuomiVideoSeconds } from "@/lib/duomi-video";
 import { buildApiUrl, modelOptionName, resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
@@ -91,7 +91,8 @@ async function createOpenAIVideoTask(config: AiConfig, model: string, prompt: st
     if (isDuomiAdapterBaseUrl(config.baseUrl)) {
         try {
             const duomiModel = modelOptionName(model);
-            if (isKlingVideoModel(duomiModel) && !references.length) throw new Error("可灵多图参考生视频至少需要 1 张参考图片");
+            if (isKlingMultiImageVideoModel(duomiModel) && !references.length) throw new Error("可灵多图参考生视频至少需要 1 张参考图片");
+            if (isKlingOmniVideoModel(duomiModel) && references.length) throw new Error("可灵 Omni 的上游创建文档暂未定义参考图字段，请移除参考图片，或使用 kling-v1-6 多图参考模型");
             const files = await Promise.all(references.slice(0, 7).map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
             const image_urls = await uploadDuomiImages(config, files, options?.signal);
             const created = unwrapVideoResponse(

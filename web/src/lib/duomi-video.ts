@@ -16,22 +16,32 @@ export function isGrokVideoModel(model: string) {
 }
 
 export function isKlingVideoModel(model: string) {
+    return isKlingMultiImageVideoModel(model) || isKlingOmniVideoModel(model);
+}
+
+export function isKlingMultiImageVideoModel(model: string) {
     return /^kling-v1-6$/i.test(model.trim());
 }
 
+export function isKlingOmniVideoModel(model: string) {
+    return /^kling-v3-omni$/i.test(model.trim());
+}
+
 export function duomiVideoResolutionOptions(model: string) {
-    return isVeoVideoModel(model)
-        ? [
+    if (isVeoVideoModel(model)) {
+        return [
               { value: "720p", label: "720p" },
               { value: "1080p", label: "1080p" },
               { value: "4k", label: "4K" },
-          ]
-        : [{ value: "720p", label: "720p" }];
+        ];
+    }
+    return [{ value: "720p", label: isKlingVideoModel(model) ? "标准" : "720p" }];
 }
 
 export function duomiVideoSecondOptions(model: string) {
     if (isVeoVideoModel(model)) return [8];
-    return isKlingVideoModel(model) ? [5, 10] : [6, 10, 15];
+    if (isKlingMultiImageVideoModel(model)) return [5, 10];
+    return isKlingOmniVideoModel(model) ? [3, 4, 5, 6, 7, 8, 9, 10] : [6, 10, 15];
 }
 
 export function normalizeDuomiVideoResolution(model: string, value: string) {

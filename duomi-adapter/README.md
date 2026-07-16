@@ -45,7 +45,7 @@ npm run dev
 | `DUOMI_POLL_INTERVAL_MS` | `15000` | 图片任务轮询间隔；兼顾 Cloudflare 免费版子请求额度 |
 | `DUOMI_TIMEOUT_MS` | `600000` | 图片任务总超时，默认 10 分钟 |
 | `DUOMI_IMAGE_MODEL` | `gpt-image-2` | 模型列表和缺省图片模型 |
-| `DUOMI_VIDEO_MODELS` | VEO/Grok/可灵五个模型 | 逗号分隔的视频模型列表 |
+| `DUOMI_VIDEO_MODELS` | VEO/Grok/可灵六个模型 | 逗号分隔的视频模型列表 |
 | `STORAGE_ENDPOINT` | 无 | S3 API 地址；Cloudflare R2 使用账户级 endpoint |
 | `STORAGE_REGION` | `auto` | S3 region；Cloudflare R2 固定使用 `auto` |
 | `STORAGE_BUCKET` | 无 | 参考图存储桶 |
@@ -85,11 +85,14 @@ veo3.1-pro
 grok-video
 grok-video-1.5
 kling-v1-6
+kling-v3-omni
 ```
 
-VEO 时长固定为 8 秒，可选 720p、1080p、4K；Grok Video 和 Grok Video 1.5 可选 6、10、15 秒，固定为 720p；可灵 `kling-v1-6` 使用 `std` 模式，可选 5、10 秒，输出清晰度由上游决定。画布只显示横屏 16:9 和竖屏 9:16，视频任务每 60 秒查询一次，不设置主动超时，直到任务成功或失败。
+VEO 时长固定为 8 秒，可选 720p、1080p、4K；Grok Video 和 Grok Video 1.5 可选 6、10、15 秒，固定为 720p；可灵 `kling-v1-6` 使用 `std` 模式，可选 5、10 秒；可灵 `kling-v3-omni` 使用 `std` 模式并开启声音，可选 3～10 秒。可灵输出清晰度由上游决定。画布只显示横屏 16:9 和竖屏 9:16，视频任务每 60 秒查询一次，不设置主动超时，直到任务成功或失败。
 
 VEO 最多 3 张参考图；`REFERENCE` 模式不支持 9:16。`grok-video` 最多 7 张参考图，`grok-video-1.5` 最多 1 张，Grok 单张参考图最大 10 MB。可灵多图参考至少需要 1 张、画布当前最多提交 7 张，参考图先上传 R2，再转换为 `image_list`。当前明确拒绝 mask 蒙版重绘。
+
+`kling-v3-omni` 的网页流程当前使用单镜头提示词。Adapter 的 JSON `/v1/videos` 支持传入 `multi_shot: true` 和 `multi_prompt` 自定义多镜头，并要求各镜头时长之和等于总时长。由于上游 Omni 创建 schema 尚未定义参考图字段，当前会明确拒绝 Omni 参考图，避免静默丢弃素材；多图参考请使用 `kling-v1-6`。
 
 生产环境将 Base URL 换成 `https://canvas.example.com/api/duomi/v1`。`local-duomi` 只是满足前端必填检查的占位值，不是真实 Duomi 密钥，也不能保护公开接口；公开部署应通过站点登录、VPN 或外部网关限制访问。
 

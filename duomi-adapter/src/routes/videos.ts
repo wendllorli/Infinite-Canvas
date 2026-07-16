@@ -26,7 +26,10 @@ function jsonVideoRequest(value: unknown) {
     if (!prompt) throw new AdapterError(400, "prompt is required", "invalid_request_error");
     const urls = imageUrls(body.image_urls, 7, false);
     validateVideoReferenceCount(model, urls.length);
-    return videoPayload(model, prompt, text(body.size), text(body.seconds), text(body.resolution_name), urls);
+    return videoPayload(model, prompt, text(body.size), text(body.seconds), text(body.resolution_name), urls, {
+        multiShot: body.multi_shot,
+        multiPrompt: body.multi_prompt,
+    });
 }
 
 async function multipartVideoRequest(request: FastifyRequest, storage?: ReferenceStorage) {

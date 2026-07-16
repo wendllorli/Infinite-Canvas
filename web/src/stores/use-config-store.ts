@@ -60,7 +60,7 @@ const CHANNEL_MODEL_SEPARATOR = "::";
 const OPENAI_BASE_URL = "https://api.openai.com";
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com";
 const DUOMI_BASE_URL = "/api/duomi/v1";
-const DUOMI_MODELS = ["gpt-image-2", "veo3.1-fast", "veo3.1-pro", "grok-video", "grok-video-1.5", "kling-v1-6"];
+const DUOMI_MODELS = ["gpt-image-2", "veo3.1-fast", "veo3.1-pro", "grok-video", "grok-video-1.5", "kling-v1-6", "kling-v3-omni"];
 
 export const defaultConfig: AiConfig = {
     channelMode: "local",

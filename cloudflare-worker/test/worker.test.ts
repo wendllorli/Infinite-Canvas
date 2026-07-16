@@ -13,7 +13,7 @@ const bindings = {
     DUOMI_POLL_INTERVAL_MS: "15000",
     DUOMI_TIMEOUT_MS: "600000",
     DUOMI_IMAGE_MODEL: "gpt-image-2",
-    DUOMI_VIDEO_MODELS: "veo3.1-fast,veo3.1-pro,grok-video,grok-video-1.5,kling-v1-6",
+    DUOMI_VIDEO_MODELS: "veo3.1-fast,veo3.1-pro,grok-video,grok-video-1.5,kling-v1-6,kling-v3-omni",
     STORAGE_PUBLIC_BASE_URL: "https://media.example.com",
 };
 
@@ -243,6 +243,56 @@ describe("Cloudflare Worker routes", () => {
         );
         expect(await polled.json()).toEqual({ id: "kling:worker-kling-task", status: "completed", url: "https://cdn.test/worker-kling.mp4" });
         expect(calls[1]?.url).toBe("https://duomi.test/api/video/kling/v1/videos/multi-image2video/worker-kling-task");
+    });
+
+    it("converts and polls a Kling Omni video", async () => {
+        const calls: Array<{ url: string; body?: unknown }> = [];
+        const fetchImpl: typeof fetch = async (input, init) => {
+            const url = String(input);
+            calls.push({ url, ...(init?.body ? { body: JSON.parse(String(init.body)) } : {}) });
+            if (init?.method === "POST") return Response.json({ code: 0, data: { task_id: "worker-omni-task" } });
+            return Response.json({
+                code: 0,
+                data: {
+                    task_id: "worker-omni-task",
+                    task_status: "succeed",
+                    task_status_msg: null,
+                    task_result: { images: null, videos: [{ id: "video-1", url: "https://cdn.test/worker-omni.mp4", duration: "3", video_url_download: "" }] },
+                },
+            });
+        };
+        const created = await handleRequest(
+            new Request("https://canvas.test/api/duomi/v1/videos", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    model: "kling-v3-omni",
+                    prompt: "introduce the city",
+                    seconds: "3",
+                    size: "16:9",
+                    image_urls: [],
+                    multi_shot: true,
+                    multi_prompt: [
+                        { index: 1, prompt: "city skyline", duration: "1" },
+                        { index: 2, prompt: "street close-up", duration: "2" },
+                    ],
+                }),
+            }),
+            directEnv(),
+            fetchImpl,
+        );
+        expect(await created.json()).toEqual({ id: "omni:worker-omni-task", status: "queued" });
+        expect(calls[0]).toMatchObject({
+            url: "https://duomi.test/api/video/kling/v1/videos/omni-video",
+            body: { model_name: "kling-v3-omni", sound: "on", duration: "3", multi_shot: true, shot_type: "customize" },
+        });
+        const polled = await handleRequest(
+            new Request(`https://canvas.test/api/duomi/v1/videos/${encodeURIComponent("omni:worker-omni-task")}`),
+            directEnv(),
+            fetchImpl,
+        );
+        expect(await polled.json()).toEqual({ id: "omni:worker-omni-task", status: "completed", url: "https://cdn.test/worker-omni.mp4" });
+        expect(calls[1]?.url).toBe("https://duomi.test/api/video/kling/v1/videos/omni-video/worker-omni-task");
     });
 
     it("delegates non-API routes to the static asset binding", async () => {

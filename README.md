@@ -77,7 +77,7 @@ cp duomi-adapter/.env.example .env
 docker compose up -d --build
 ```
 
-画布中选择 OpenAI 格式，Base URL 填写 `http://localhost:3000/api/duomi/v1`，API Key 填写占位值 `local-duomi`，图片模型填写 `gpt-image-2`；视频模型可使用 `veo3.1-fast`、`veo3.1-pro`、`grok-video`、`grok-video-1.5` 或 `kling-v1-6`。详细配置与本地双进程启动方式见 [Duomi Adapter](duomi-adapter/README.md)。
+画布中选择 OpenAI 格式，Base URL 填写 `http://localhost:3000/api/duomi/v1`，API Key 填写占位值 `local-duomi`，图片模型填写 `gpt-image-2`；视频模型可使用 `veo3.1-fast`、`veo3.1-pro`、`grok-video`、`grok-video-1.5`、`kling-v1-6` 或 `kling-v3-omni`。详细配置与本地双进程启动方式见 [Duomi Adapter](duomi-adapter/README.md)。
 
 不使用 Docker 时，先在 `duomi-adapter` 中复制并填写 `.env`，再分别启动两个终端：
 

@@ -57,7 +57,7 @@ function config(apiBase: string): AdapterConfig {
         pollIntervalMs: 1,
         timeoutMs: 500,
         imageModel: "gpt-image-2",
-        videoModels: ["veo3.1-fast", "veo3.1-pro", "grok-video", "grok-video-1.5", "kling-v1-6"],
+        videoModels: ["veo3.1-fast", "veo3.1-pro", "grok-video", "grok-video-1.5", "kling-v1-6", "kling-v3-omni"],
     };
 }
 
@@ -189,6 +189,76 @@ describe("reference uploads", () => {
 });
 
 describe("video adapter", () => {
+    it("creates and polls a Kling Omni single-shot video", async () => {
+        let submitted: Record<string, unknown> | undefined;
+        const upstream = await mockServer((request, response, body) => {
+            if (request.method === "POST") {
+                expect(request.url).toBe("/api/video/kling/v1/videos/omni-video");
+                submitted = JSON.parse(body) as Record<string, unknown>;
+                json(response, { code: 0, message: "SUCCEED", data: { task_id: "omni-task" } });
+                return;
+            }
+            expect(request.url).toBe("/api/video/kling/v1/videos/omni-video/omni-task");
+            json(response, {
+                code: 0,
+                message: "SUCCEED",
+                data: {
+                    task_id: "omni-task",
+                    task_status: "succeed",
+                    task_status_msg: null,
+                    task_result: { images: null, videos: [{ id: "omni-video", url: "https://cdn.test/omni.mp4", duration: "7", video_url_download: "" }] },
+                },
+            });
+        });
+        const { base } = await startAdapter(upstream);
+        const created = await fetch(`${base}/v1/videos`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model: "kling-v3-omni", prompt: "a quiet forest wakes up", seconds: "7", size: "9:16", image_urls: [] }),
+        });
+        expect(await created.json()).toEqual({ id: "omni:omni-task", status: "queued" });
+        expect(submitted).toEqual({
+            model_name: "kling-v3-omni",
+            prompt: "a quiet forest wakes up",
+            mode: "std",
+            aspect_ratio: "9:16",
+            sound: "on",
+            duration: "7",
+            multi_shot: false,
+            callback_url: "",
+        });
+        const polled = await fetch(`${base}/v1/videos/${encodeURIComponent("omni:omni-task")}`);
+        expect(await polled.json()).toEqual({ id: "omni:omni-task", status: "completed", url: "https://cdn.test/omni.mp4" });
+    });
+
+    it("forwards validated Kling Omni custom shots", async () => {
+        let submitted: Record<string, unknown> | undefined;
+        const upstream = await mockServer((_request, response, body) => {
+            submitted = JSON.parse(body) as Record<string, unknown>;
+            json(response, { data: { task_id: "omni-multi-task" } });
+        });
+        const { base } = await startAdapter(upstream);
+        const multi_prompt = [
+            { index: 1, prompt: "wide establishing shot", duration: "1" },
+            { index: 2, prompt: "close-up of the hero", duration: "2" },
+        ];
+        const response = await fetch(`${base}/v1/videos`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model: "kling-v3-omni", prompt: "hero introduction", seconds: "3", size: "16:9", image_urls: [], multi_shot: true, multi_prompt }),
+        });
+        expect(response.status).toBe(200);
+        expect(submitted).toMatchObject({ multi_shot: true, shot_type: "customize", multi_prompt });
+
+        const withReference = await fetch(`${base}/v1/videos`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model: "kling-v3-omni", prompt: "move", seconds: "3", image_urls: ["https://media.example.com/a.png"] }),
+        });
+        expect(withReference.status).toBe(400);
+        expect((await withReference.json()).error.type).toBe("unsupported_feature");
+    });
+
     it("creates and polls a Kling multi-image video", async () => {
         let submitted: Record<string, unknown> | undefined;
         let queryCount = 0;

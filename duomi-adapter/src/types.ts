@@ -44,6 +44,8 @@ export type VideoJsonRequest = {
     size?: string;
     resolution_name?: string;
     image_urls?: string[];
+    multi_shot?: boolean;
+    multi_prompt?: Array<{ index?: number; prompt?: string; duration?: string | number }>;
 };
 
 export type DuomiImageRequest = {
@@ -93,7 +95,20 @@ export type DuomiKlingVideoRequest = {
     aspect_ratio: "16:9" | "9:16";
 };
 
-export type DuomiVideoRequest = DuomiStandardVideoRequest | DuomiKlingVideoRequest;
+export type DuomiOmniVideoRequest = {
+    model_name: string;
+    prompt: string;
+    mode: "std";
+    aspect_ratio: "16:9" | "9:16";
+    sound: "on";
+    duration: string;
+    multi_shot: boolean;
+    shot_type?: "customize";
+    multi_prompt?: Array<{ index: number; prompt: string; duration: string }>;
+    callback_url: "";
+};
+
+export type DuomiVideoRequest = DuomiStandardVideoRequest | DuomiKlingVideoRequest | DuomiOmniVideoRequest;
 
 export type DuomiKlingTask = {
     code?: unknown;

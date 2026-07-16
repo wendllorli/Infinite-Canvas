@@ -55,16 +55,24 @@ export class DuomiClient {
         assertDuomiKey(this.config);
         const deadline = this.now() + this.config.timeoutMs;
         const kling = "model_name" in input;
-        const path = kling ? "/api/video/kling/v1/videos/multi-image2video" : "/v1/videos/generations";
+        const omni = kling && "sound" in input;
+        const path = omni ? "/api/video/kling/v1/videos/omni-video" : kling ? "/api/video/kling/v1/videos/multi-image2video" : "/v1/videos/generations";
         const created = await this.requestJson<DuomiCreatedTask>(path, { method: "POST", body: JSON.stringify(input) }, deadline);
         assertSuccessfulEnvelope(created, "Duomi Kling video generation failed");
         const id = taskId(created);
         if (!id) throw new AdapterError(502, "Duomi video generation did not return a task id", "invalid_upstream_response");
-        return kling ? `kling:${id}` : id;
+        return omni ? `omni:${id}` : kling ? `kling:${id}` : id;
     }
 
     async getVideoTask(id: string): Promise<DuomiVideoTaskResult> {
         assertDuomiKey(this.config);
+        if (id.startsWith("omni:")) {
+            const upstreamId = id.slice("omni:".length).trim();
+            if (!upstreamId) throw new AdapterError(400, "Kling Omni task id is invalid", "invalid_request_error");
+            const task = await this.requestJson<DuomiKlingTask>(`/api/video/kling/v1/videos/omni-video/${encodeURIComponent(upstreamId)}`, { method: "GET" }, this.now() + this.config.timeoutMs);
+            assertSuccessfulEnvelope(task, "Duomi Kling Omni task query failed");
+            return { provider: "kling", task };
+        }
         if (id.startsWith("kling:")) {
             const upstreamId = id.slice("kling:".length).trim();
             if (!upstreamId) throw new AdapterError(400, "Kling task id is invalid", "invalid_request_error");

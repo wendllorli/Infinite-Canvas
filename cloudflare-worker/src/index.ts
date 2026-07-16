@@ -82,7 +82,7 @@ function workerConfig(env: Env): AdapterConfig {
         pollIntervalMs: positiveInteger(env.DUOMI_POLL_INTERVAL_MS, DEFAULT_POLL_INTERVAL_MS, "DUOMI_POLL_INTERVAL_MS"),
         timeoutMs: positiveInteger(env.DUOMI_TIMEOUT_MS, DEFAULT_TIMEOUT_MS, "DUOMI_TIMEOUT_MS"),
         imageModel: env.DUOMI_IMAGE_MODEL?.trim() || "gpt-image-2",
-        videoModels: csv(env.DUOMI_VIDEO_MODELS, ["veo3.1-fast", "veo3.1-pro", "grok-video", "grok-video-1.5", "kling-v1-6"]),
+        videoModels: csv(env.DUOMI_VIDEO_MODELS, ["veo3.1-fast", "veo3.1-pro", "grok-video", "grok-video-1.5", "kling-v1-6", "kling-v3-omni"]),
     };
 }
 
@@ -136,7 +136,10 @@ async function videoRequest(request: Request, env: Env) {
         if (!prompt) throw new AdapterError(400, "prompt is required", "invalid_request_error");
         const urls = imageUrls(body.image_urls, 7, false);
         validateVideoReferenceCount(model, urls.length);
-        return videoPayload(model, prompt, text(body.size), text(body.seconds), text(body.resolution_name), urls);
+        return videoPayload(model, prompt, text(body.size), text(body.seconds), text(body.resolution_name), urls, {
+            multiShot: body.multi_shot === true,
+            multiPrompt: body.multi_prompt,
+        });
     }
     const form = await request.formData();
     const model = videoModel(field(form, "model"));
