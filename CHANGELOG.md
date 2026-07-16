@@ -2,6 +2,9 @@
 
 ## Unreleased
 
++ [新增] 画布空白区域支持双击打开节点创建菜单，并优化浮层内滚动时的画布缩放拦截。
++ [修复] 修复非 HTTPS 局域网环境中随机 UUID 不可用可能导致页面异常的问题。
++ [修复] 修复 Gemini 格式生图时因内置比例列表触发误报的问题。
 + [新增] 新增服务端 Duomi Adapter，通过同域代理支持异步文生图、R2 参考图编辑和 VEO/Grok 视频生成，并避免真实 Duomi Key 暴露在浏览器。
 + [新增] 新增 Cloudflare 单 Worker 部署，支持静态画布、Duomi API、R2 binding、参考图逐张预上传和免费版轮询预算。
 + [修复] 修复 Cloudflare Workers 生产环境调用 Duomi 时全局 fetch 绑定错误的问题。

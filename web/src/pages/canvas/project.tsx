@@ -212,6 +212,45 @@ function ConnectionCreateOption({ theme, icon, title, description, onClick }: { 
     );
 }
 
+function NodeCreateMenu({ position, onCreate, onClose }: { position: Position; onCreate: (type: CanvasNodeType) => void; onClose: () => void }) {
+    const theme = canvasThemes[useThemeStore((state) => state.theme)];
+    const menuRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handlePointerDown = (event: PointerEvent) => {
+            if (menuRef.current && !menuRef.current.contains(event.target as Node)) onClose();
+        };
+        document.addEventListener("pointerdown", handlePointerDown, true);
+        return () => document.removeEventListener("pointerdown", handlePointerDown, true);
+    }, [onClose]);
+
+    return (
+        <div
+            ref={menuRef}
+            className="absolute z-[120] max-h-[70vh] w-[300px] overflow-y-auto rounded-[18px] border p-3 shadow-2xl backdrop-blur thin-scrollbar"
+            data-canvas-no-zoom
+            style={{ left: position.x, top: position.y, background: theme.node.panel, borderColor: theme.node.stroke, color: theme.node.text }}
+            onPointerDown={(event) => event.stopPropagation()}
+        >
+            <div className="mb-2 flex items-center justify-between px-1">
+                <span className="text-sm font-medium" style={{ color: theme.node.muted }}>
+                    选择节点
+                </span>
+                <button type="button" className="grid size-7 place-items-center rounded-lg text-base opacity-55 transition hover:opacity-100" onClick={onClose} aria-label="关闭">
+                    ×
+                </button>
+            </div>
+            <div className="grid gap-1">
+                <ConnectionCreateOption theme={theme} icon={<List className="size-5" />} title="文本生成" description="脚本、广告词、品牌文案" onClick={() => onCreate(CanvasNodeType.Text)} />
+                <ConnectionCreateOption theme={theme} icon={<ImageIcon className="size-5" />} title="图片生成" onClick={() => onCreate(CanvasNodeType.Image)} />
+                <ConnectionCreateOption theme={theme} icon={<Video className="size-5" />} title="视频生成" onClick={() => onCreate(CanvasNodeType.Video)} />
+                <ConnectionCreateOption theme={theme} icon={<Music2 className="size-5" />} title="音频参考" onClick={() => onCreate(CanvasNodeType.Audio)} />
+                <ConnectionCreateOption theme={theme} icon={<Settings2 className="size-5" />} title="配置节点" description="模型、尺寸、数量和输入顺序" onClick={() => onCreate(CanvasNodeType.Config)} />
+            </div>
+        </div>
+    );
+}
+
 function InfiniteCanvasPage() {
     const { message, modal } = App.useApp();
     const params = useParams<{ id: string }>();
@@ -281,6 +320,7 @@ function InfiniteCanvasPage() {
     const [mouseWorld, setMouseWorld] = useState<Position>({ x: 0, y: 0 });
     const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null);
     const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+    const [nodeCreatePosition, setNodeCreatePosition] = useState<Position | null>(null);
     const [runningNodeId, setRunningNodeId] = useState<string | null>(null);
     const [isMiniMapOpen, setIsMiniMapOpen] = useState(false);
     const [backgroundMode, setBackgroundMode] = useState<CanvasBackgroundMode>("lines");
@@ -1033,6 +1073,7 @@ function InfiniteCanvasPage() {
     const handleCanvasMouseDown = useCallback(
         (event: ReactPointerEvent<HTMLDivElement>) => {
             setContextMenu(null);
+            setNodeCreatePosition(null);
             if (pendingConnectionCreateRef.current) cancelPendingConnectionCreate();
             if (event.button !== 0) return;
 
@@ -1405,6 +1446,7 @@ function InfiniteCanvasPage() {
                 setSelectedNodeIds(new Set(nodesRef.current.map((node) => node.id)));
                 setSelectedConnectionId(null);
                 setContextMenu(null);
+                setNodeCreatePosition(null);
                 setSelectionBox(null);
                 return;
             }
@@ -1433,6 +1475,7 @@ function InfiniteCanvasPage() {
                 setSelectedNodeIds(new Set());
                 setSelectedConnectionId(null);
                 setContextMenu(null);
+                setNodeCreatePosition(null);
                 setSelectionBox(null);
                 setConnecting(null);
                 setHoveredNodeId(null);
@@ -2507,6 +2550,10 @@ function InfiniteCanvasPage() {
                     }}
                     onCanvasMouseDown={handleCanvasMouseDown}
                     onCanvasDeselect={deselectCanvas}
+                    onCanvasDoubleClick={(event) => {
+                        setContextMenu(null);
+                        setNodeCreatePosition(screenToCanvas(event.clientX, event.clientY));
+                    }}
                     onContextMenu={preventCanvasContextMenu}
                     onDrop={handleDrop}
                 >
@@ -2645,6 +2692,16 @@ function InfiniteCanvasPage() {
                         />
                     ) : null}
                     {pendingConnectionCreate ? <ConnectionCreateMenu pending={pendingConnectionCreate} onCreate={(type) => createConnectedNode(type, pendingConnectionCreate)} onClose={cancelPendingConnectionCreate} /> : null}
+                    {nodeCreatePosition ? (
+                        <NodeCreateMenu
+                            position={nodeCreatePosition}
+                            onCreate={(type) => {
+                                createNode(type, nodeCreatePosition);
+                                setNodeCreatePosition(null);
+                            }}
+                            onClose={() => setNodeCreatePosition(null)}
+                        />
+                    ) : null}
                 </InfiniteCanvas>
 
                 <CanvasNodeHoverToolbar
