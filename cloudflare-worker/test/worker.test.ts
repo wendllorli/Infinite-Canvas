@@ -170,6 +170,35 @@ describe("Cloudflare Worker routes", () => {
         expect(calls[0]).toMatchObject({ authorization: "worker-test-secret", body: { model: "gpt-image-2", prompt: "edit", image: ["https://media.example.com/a.png", "https://media.example.com/b.png"] } });
     });
 
+    it("maps Nano Banana dimensions to a ratio and creates one task per requested image", async () => {
+        let created = 0;
+        const requests: Array<{ url: string; body: unknown }> = [];
+        const response = await handleRequest(
+            new Request("https://canvas.test/api/duomi/v1/images/generations", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ model: "gemini-3.1-flash-image-preview", prompt: "banana astronaut", size: "16:9", quality: "2K", n: 2 }),
+            }),
+            directEnv({ DUOMI_POLL_INTERVAL_MS: "1", DUOMI_TIMEOUT_MS: "100" }),
+            async (input, init) => {
+                const url = String(input);
+                requests.push({ url, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+                if (url.endsWith("/api/gemini/nano-banana")) {
+                    created += 1;
+                    return Response.json({ code: 200, data: { task_id: `nano-${created}` } });
+                }
+                const id = url.split("/").at(-1);
+                return Response.json({ code: 200, data: { task_id: id, state: "succeeded", data: { images: [{ url: `https://cdn.test/${id}.png` }] } } });
+            },
+        );
+        expect(response.status).toBe(200);
+        expect(((await response.json()) as { data: Array<{ url: string }> }).data).toEqual([{ url: "https://cdn.test/nano-1.png" }, { url: "https://cdn.test/nano-2.png" }]);
+        expect(requests.filter((request) => request.url.endsWith("/api/gemini/nano-banana")).map((request) => request.body)).toEqual([
+            { model: "gemini-3.1-flash-image-preview", prompt: "banana astronaut", aspect_ratio: "16:9", image_size: "2K" },
+            { model: "gemini-3.1-flash-image-preview", prompt: "banana astronaut", aspect_ratio: "16:9", image_size: "2K" },
+        ]);
+    });
+
     it("rejects mask edits and supports JSON video references", async () => {
         const masked = await runtime.dispatchFetch("https://canvas.test/api/duomi/v1/images/edits", {
             method: "POST",

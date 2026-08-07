@@ -2,6 +2,7 @@ import { DuomiClient } from "../../duomi-adapter/src/duomi-client.js";
 import { AdapterError } from "../../duomi-adapter/src/errors.js";
 import { GROK_MODELS, IMAGE_MIME_TYPES, KLING_MODELS, QUALITY_VALUES, VEO_MODELS, canonicalVideoModel, imageUrls, mapVideoTask, validateVideoReferenceCount, videoPayload } from "../../duomi-adapter/src/media.js";
 import { fetchDuomiResultImage } from "../../duomi-adapter/src/media-proxy.js";
+import { NANO_BANANA_MODELS, isNanoBananaModel } from "../../duomi-adapter/src/nano-banana.js";
 import type { AdapterConfig, AdapterErrorBody, DuomiImageRequest } from "../../duomi-adapter/src/types.js";
 import { siteAuthResponse } from "./site-auth.js";
 
@@ -49,7 +50,7 @@ export async function handleRequest(request: Request, env: Env, fetchImpl: typeo
 
     if (request.method === "GET" && path === "/health") return json({ ok: true, service: "duomi-adapter" });
     if (request.method === "GET" && path === "/v1/models") {
-        return json({ object: "list", data: [config.imageModel, ...config.videoModels].map((id) => ({ id, object: "model", owned_by: "duomi" })) });
+        return json({ object: "list", data: Array.from(new Set([config.imageModel, ...NANO_BANANA_MODELS, ...config.videoModels])).map((id) => ({ id, object: "model", owned_by: "duomi" })) });
     }
     if (request.method === "GET" && path === "/v1/media") return mediaResponse(url.searchParams.get("url"), fetchImpl);
     if (request.method === "POST" && path === "/v1/uploads") return uploadResponse(request, env);
@@ -100,9 +101,10 @@ async function mediaResponse(value: unknown, fetchImpl: typeof fetch) {
 function generationRequest(config: AdapterConfig, body: Record<string, unknown>): DuomiImageRequest {
     const prompt = text(body.prompt);
     validatePrompt(prompt);
+    const model = text(body.model) || config.imageModel;
     const quality = text(body.quality);
-    validateQuality(quality);
-    return { model: text(body.model) || config.imageModel, prompt, ...(text(body.size) ? { size: text(body.size) } : {}), ...(quality ? { quality } : {}) };
+    validateQuality(quality, model);
+    return { model, prompt, ...(text(body.size) ? { size: text(body.size) } : {}), ...(quality ? { quality } : {}), ...(isNanoBananaModel(model) ? { n: imageCount(body.n) } : {}) };
 }
 
 async function editRequest(request: Request, config: AdapterConfig, env: Env): Promise<DuomiImageRequest> {
@@ -111,21 +113,23 @@ async function editRequest(request: Request, config: AdapterConfig, env: Env): P
         if (body.mask) throw maskError();
         const prompt = text(body.prompt);
         validatePrompt(prompt);
+        const model = text(body.model) || config.imageModel;
         const quality = text(body.quality);
-        validateQuality(quality);
-        return { model: text(body.model) || config.imageModel, prompt, ...(text(body.size) ? { size: text(body.size) } : {}), ...(quality ? { quality } : {}), image: imageUrls(body.image, 9) };
+        validateQuality(quality, model);
+        return { model, prompt, ...(text(body.size) ? { size: text(body.size) } : {}), ...(quality ? { quality } : {}), ...(isNanoBananaModel(model) ? { n: imageCount(body.n) } : {}), image: imageUrls(body.image, referenceLimit(model)) };
     }
     const form = await request.formData();
     if (form.has("mask")) throw maskError();
     const files = filesFor(form, ["image", "image[]"]);
     if (!files.length) throw new AdapterError(400, "At least one reference image is required", "invalid_request_error");
-    if (files.length > 9) throw new AdapterError(400, "A maximum of 9 reference images is supported", "invalid_request_error");
+    const model = field(form, "model") || config.imageModel;
+    if (files.length > referenceLimit(model)) throw new AdapterError(400, `A maximum of ${referenceLimit(model)} reference images is supported`, "invalid_request_error");
     const prompt = field(form, "prompt");
     validatePrompt(prompt);
     const quality = field(form, "quality");
-    validateQuality(quality);
+    validateQuality(quality, model);
     const urls = await Promise.all(files.map((file) => uploadFile(file, env)));
-    return { model: field(form, "model") || config.imageModel, prompt, ...(field(form, "size") ? { size: field(form, "size") } : {}), ...(quality ? { quality } : {}), image: urls };
+    return { model, prompt, ...(field(form, "size") ? { size: field(form, "size") } : {}), ...(quality ? { quality } : {}), ...(isNanoBananaModel(model) ? { n: imageCount(field(form, "n")) } : {}), image: urls };
 }
 
 async function videoRequest(request: Request, env: Env) {
@@ -220,12 +224,24 @@ function validatePrompt(prompt: string) {
     if (prompt.length > 5000) throw new AdapterError(400, "prompt must not exceed 5000 characters", "invalid_request_error");
 }
 
-function validateQuality(quality: string) {
+function validateQuality(quality: string, model: string) {
+    if (isNanoBananaModel(model)) return;
     if (quality && !QUALITY_VALUES.has(quality)) throw new AdapterError(400, "quality must be low, medium, or high", "invalid_request_error");
+}
+
+function imageCount(value: unknown) {
+    if (value === undefined || value === "") return 1;
+    const count = typeof value === "number" ? value : Number(value);
+    if (!Number.isInteger(count) || count < 1 || count > 15) throw new AdapterError(400, "n must be an integer between 1 and 15", "invalid_request_error");
+    return count;
 }
 
 function maskError() {
     return new AdapterError(400, "Duomi API does not currently support mask-based inpainting", "unsupported_feature");
+}
+
+function referenceLimit(model: string) {
+    return isNanoBananaModel(model) ? 10 : 9;
 }
 
 async function jsonBody(request: Request) {
