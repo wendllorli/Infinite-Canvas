@@ -3,6 +3,7 @@ import { CircleAlert, Cloud, KeyRound, Link2, Plus, RefreshCw, ShieldCheck, Tras
 import { useEffect, useState } from "react";
 
 import { ModelPicker } from "@/components/model-picker";
+import { ConfigLocalStorage } from "@/components/layout/config-local-storage";
 import { fetchChannelModels } from "@/services/api/image";
 import { syncAppDataToWebdav, type AppSyncDomainKey, type AppSyncProgressEvent } from "@/services/app-sync";
 import { testWebdavConnection, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
@@ -422,6 +423,11 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                 </section>
                             </Form>
                         ),
+                    },
+                    {
+                        key: "local-storage",
+                        label: "本地存储",
+                        children: <ConfigLocalStorage active={activeTab === "local-storage"} />,
                     },
                     {
                         key: "codex",
