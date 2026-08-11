@@ -1,4 +1,5 @@
 import { AdapterError, assertDuomiKey } from "./errors.js";
+import { isNanoBananaModel, nanoBananaImageSize } from "./nano-banana.js";
 import type { AdapterConfig, DuomiCreatedTask, DuomiImageRequest, DuomiKlingTask, DuomiMedia, DuomiTask, DuomiVideoRequest, DuomiVideoTaskResult } from "./types.js";
 
 type ClientDependencies = {
@@ -31,14 +32,24 @@ export class DuomiClient {
 
     async generateImages(input: DuomiImageRequest): Promise<ImageResult> {
         assertDuomiKey(this.config);
+        const nanoBanana = isNanoBananaModel(input.model);
+        const count = nanoBanana ? imageCount(input.n) : 1;
+        if (count === 1) return this.generateImage(input, nanoBanana);
+
+        const results = await Promise.all(Array.from({ length: count }, () => this.generateImage(input, nanoBanana)));
+        return { created: Math.floor(this.now() / 1000), data: results.flatMap((result) => result.data) };
+    }
+
+    private async generateImage(input: DuomiImageRequest, nanoBanana: boolean): Promise<ImageResult> {
         const deadline = this.now() + this.config.timeoutMs;
-        const created = await this.requestJson<DuomiCreatedTask>("/v1/images/generations?async=true", { method: "POST", body: JSON.stringify(input) }, deadline);
-        const id = stringValue(created.id);
+        const created = await this.requestJson<DuomiCreatedTask>(nanoBanana ? nanoBananaPath(input) : "/v1/images/generations?async=true", { method: "POST", body: JSON.stringify(nanoBanana ? nanoBananaRequest(input) : input) }, deadline);
+        const id = taskId(created);
         if (!id) throw new AdapterError(502, "Duomi image generation did not return a task id", "invalid_upstream_response");
 
         for (;;) {
             if (this.now() >= deadline) throw timeoutError();
-            const task = await this.requestJson<DuomiTask>(`/v1/tasks/${encodeURIComponent(id)}`, { method: "GET" }, deadline);
+            const response = await this.requestJson<DuomiTask>(nanoBanana ? `/api/gemini/nano-banana/${encodeURIComponent(id)}` : `/v1/tasks/${encodeURIComponent(id)}`, { method: "GET" }, deadline);
+            const task = nanoBanana ? unwrapNanoBananaTask(response) : response;
             const state = stringValue(task.state);
             if (state === "succeeded") return imageResult(task);
             if (state === "error") throw new AdapterError(502, taskErrorMessage(task, "Duomi image generation failed"), "duomi_api_error");
@@ -121,6 +132,30 @@ export class DuomiClient {
             throw new AdapterError(502, "Duomi API returned invalid JSON", "invalid_upstream_response");
         }
     }
+}
+
+function nanoBananaPath(input: DuomiImageRequest) {
+    return input.image?.length ? "/api/gemini/nano-banana-edit" : "/api/gemini/nano-banana";
+}
+
+function imageCount(value: number | undefined) {
+    return Math.max(1, Math.min(15, Math.floor(value || 1)));
+}
+
+function nanoBananaRequest(input: DuomiImageRequest) {
+    const imageSize = nanoBananaImageSize(input.quality);
+    return {
+        model: input.model,
+        prompt: input.prompt,
+        ...(input.image?.length ? { image_urls: input.image } : {}),
+        ...(input.size ? { aspect_ratio: input.size } : {}),
+        ...(imageSize ? { image_size: imageSize } : {}),
+    };
+}
+
+function unwrapNanoBananaTask(response: DuomiTask): DuomiTask {
+    const data = response.data;
+    return data && typeof data === "object" && ("state" in data || "status" in data) ? (data as unknown as DuomiTask) : response;
 }
 
 function imageResult(task: DuomiTask): ImageResult {

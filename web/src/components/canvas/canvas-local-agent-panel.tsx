@@ -798,7 +798,7 @@ function agentMessageToChatMessage(item: AgentChatItem) {
     return { ...item, attachments: item.attachments?.map(agentAttachmentToChatAttachment) };
 }
 
-function agentAttachmentToChatAttachment(item: AgentAttachment): CanvasAgentChatAttachment {
+function agentAttachmentToChatAttachment(item: { id: string; name: string; url: string; dataUrl?: string }): CanvasAgentChatAttachment {
     return { id: item.id, name: item.name, url: item.dataUrl || item.url };
 }
 

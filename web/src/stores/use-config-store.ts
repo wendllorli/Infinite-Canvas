@@ -4,6 +4,7 @@ import { persist } from "zustand/middleware";
 import { nanoid } from "nanoid";
 
 export type ApiCallFormat = "openai" | "gemini";
+export type ReasoningEffort = "auto" | "low" | "medium" | "high" | "xhigh";
 
 export type ModelChannel = {
     id: string;
@@ -34,6 +35,7 @@ export type AiConfig = {
     videoGenerateAudio: string;
     videoWatermark: string;
     systemPrompt: string;
+    reasoningEffort: ReasoningEffort;
     models: string[];
     imageModels: string[];
     videoModels: string[];
@@ -41,6 +43,7 @@ export type AiConfig = {
     audioModels: string[];
     quality: string;
     size: string;
+    background: string;
     count: string;
     canvasImageCount: string;
 };
@@ -52,7 +55,7 @@ export type WebdavSyncConfig = {
     directory: string;
     lastSyncedAt: string;
 };
-export type ConfigTabKey = "channels" | "models" | "preferences" | "webdav" | "codex";
+export type ConfigTabKey = "channels" | "models" | "preferences" | "webdav" | "local-storage" | "codex";
 
 export const CONFIG_STORE_KEY = "infinite-canvas:ai_config_store";
 export type ModelCapability = "image" | "video" | "text" | "audio";
@@ -60,7 +63,9 @@ const CHANNEL_MODEL_SEPARATOR = "::";
 const OPENAI_BASE_URL = "https://api.openai.com";
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com";
 const DUOMI_BASE_URL = "/api/duomi/v1";
-const DUOMI_MODELS = ["gpt-image-2", "veo3.1-fast", "veo3.1-pro", "grok-video", "grok-video-1.5", "kling-v1-6", "kling-v3-omni"];
+const DUOMI_IMAGE_MODELS = ["gpt-image-2", "gemini-3-pro-image-preview", "gemini-2.5-flash-image", "gemini-3.1-flash-image-preview"];
+const DUOMI_VIDEO_MODELS = ["veo3.1-fast", "veo3.1-pro", "grok-video", "grok-video-1.5", "kling-v1-6", "kling-v3-omni"];
+const DUOMI_MODELS = [...DUOMI_IMAGE_MODELS, ...DUOMI_VIDEO_MODELS];
 
 export const defaultConfig: AiConfig = {
     channelMode: "local",
@@ -91,13 +96,15 @@ export const defaultConfig: AiConfig = {
     videoGenerateAudio: "true",
     videoWatermark: "false",
     systemPrompt: "",
+    reasoningEffort: "auto",
     models: DUOMI_MODELS.map((model) => `default::${model}`),
-    imageModels: ["default::gpt-image-2"],
-    videoModels: DUOMI_MODELS.slice(1).map((model) => `default::${model}`),
+    imageModels: DUOMI_IMAGE_MODELS.map((model) => `default::${model}`),
+    videoModels: DUOMI_VIDEO_MODELS.map((model) => `default::${model}`),
     textModels: [],
     audioModels: [],
     quality: "high",
     size: "1:1",
+    background: "",
     count: "1",
     canvasImageCount: "3",
 };
@@ -158,6 +165,14 @@ export function filterModelsByCapability(models: string[], capability?: ModelCap
 export function selectableModelsByCapability(config: AiConfig, capability?: ModelCapability) {
     if (!capability) return config.models;
     return config[modelListKey(capability)];
+}
+
+export function resolveModelForCapability(config: AiConfig, currentModel: string | undefined, capability: ModelCapability) {
+    const defaultModel = capability === "image" ? config.imageModel : capability === "video" ? config.videoModel : capability === "audio" ? config.audioModel : config.textModel;
+    const fallbackModel = capability === "image" ? defaultConfig.imageModel : capability === "video" ? defaultConfig.videoModel : capability === "audio" ? defaultConfig.audioModel : defaultConfig.textModel;
+    if (currentModel && modelMatchesCapability(currentModel, capability)) return currentModel;
+    if (defaultModel && modelMatchesCapability(defaultModel, capability)) return defaultModel;
+    return fallbackModel;
 }
 
 function modelListKey(capability: ModelCapability) {
@@ -230,7 +245,7 @@ export const useConfigStore = create<ConfigStore>()(
                         videoGenerateAudio: config.videoGenerateAudio || "true",
                         videoWatermark: config.videoWatermark || "false",
                         canvasImageCount: config.canvasImageCount || "3",
-                        imageModels: Array.isArray(persistedConfig.imageModels) ? normalizeModelList(config.imageModels, channels) : filterModelsByCapability(models, "image"),
+                        imageModels: ensureDuomiImageModels(Array.isArray(persistedConfig.imageModels) ? normalizeModelList(config.imageModels, channels) : filterModelsByCapability(models, "image"), channels),
                         videoModels: ensureDuomiVideoModels(Array.isArray(persistedConfig.videoModels) ? normalizeModelList(config.videoModels, channels) : filterModelsByCapability(models, "video"), channels),
                         textModels: Array.isArray(persistedConfig.textModels) ? normalizeModelList(config.textModels, channels) : filterModelsByCapability(models, "text"),
                         audioModels: Array.isArray(persistedConfig.audioModels) ? normalizeModelList(config.audioModels, channels) : filterModelsByCapability(models, "audio"),
@@ -367,7 +382,14 @@ function normalizeChannels(config: AiConfig) {
 
 function ensureDuomiVideoModels(models: string[], channels: ModelChannel[]) {
     const required = channels.flatMap((channel) =>
-        isDuomiChannel(channel) ? DUOMI_MODELS.slice(1).map((model) => encodeChannelModel(channel.id, model)) : [],
+        isDuomiChannel(channel) ? DUOMI_VIDEO_MODELS.map((model) => encodeChannelModel(channel.id, model)) : [],
+    );
+    return normalizeModelList([...models, ...required], channels);
+}
+
+function ensureDuomiImageModels(models: string[], channels: ModelChannel[]) {
+    const required = channels.flatMap((channel) =>
+        isDuomiChannel(channel) ? DUOMI_IMAGE_MODELS.map((model) => encodeChannelModel(channel.id, model)) : [],
     );
     return normalizeModelList([...models, ...required], channels);
 }

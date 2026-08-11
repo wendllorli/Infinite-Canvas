@@ -53,6 +53,7 @@ export type DuomiImageRequest = {
     prompt: string;
     size?: string;
     quality?: string;
+    n?: number;
     image?: string[];
 };
 

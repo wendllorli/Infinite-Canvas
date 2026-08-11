@@ -115,6 +115,7 @@ const IMAGE_OUTPUT_FORMAT = "png";
 
 const GEMINI_SUPPORTED_RATIOS = ["1:1", "1:4", "1:8", "2:3", "3:2", "3:4", "4:1", "4:3", "4:5", "5:4", "8:1", "9:16", "16:9", "21:9"];
 const GEMINI_IMAGE_SIZE_BY_QUALITY: Record<string, string> = { low: "1K", medium: "2K", high: "4K", standard: "1K", hd: "2K" };
+const DUOMI_NANO_BANANA_MODELS = new Set(["gemini-3-pro-image-preview", "gemini-2.5-flash-image", "gemini-3.1-flash-image-preview"]);
 
 function normalizeQuality(quality: string) {
     const value = quality.trim().toLowerCase();
@@ -223,6 +224,20 @@ function resolveGeminiImageSize(quality: string, dimensions: { width: number; he
 function supportsGeminiImageSize(model: string) {
     const value = model.toLowerCase();
     return value.includes("gemini-3") || value.includes("3.1") || value.includes("3-pro");
+}
+
+function isDuomiNanoBananaModel(model: string) {
+    return DUOMI_NANO_BANANA_MODELS.has(model.trim());
+}
+
+function resolveDuomiNanoBananaConfig(config: AiConfig) {
+    const value = config.size.trim();
+    const dimensions = parseImageDimensions(value);
+    const ratio = dimensions ? `${dimensions.width}:${dimensions.height}` : value;
+    const size = value && value.toLowerCase() !== "auto" ? closestGeminiAspectRatio(ratio) : undefined;
+    const resolvedQuality = resolveGeminiImageSize(config.quality, dimensions);
+    const quality = resolvedQuality === "512" ? "1K" : resolvedQuality;
+    return { size, quality };
 }
 
 function resolveImageDataUrl(item: Record<string, unknown>) {
@@ -664,8 +679,10 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
             throw new Error(readAxiosError(error, "请求失败"));
         }
     }
-    const quality = normalizeQuality(config.quality);
-    const requestSize = isDuomiAdapterBaseUrl(requestConfig.baseUrl) && config.size.includes(":") ? config.size.trim() : resolveRequestSize(quality, config.size);
+    const nanoBanana = isDuomiAdapterBaseUrl(requestConfig.baseUrl) && isDuomiNanoBananaModel(requestConfig.model);
+    const nanoBananaConfig = nanoBanana ? resolveDuomiNanoBananaConfig(config) : undefined;
+    const quality = nanoBanana ? nanoBananaConfig?.quality : normalizeQuality(config.quality);
+    const requestSize = nanoBanana ? nanoBananaConfig?.size : isDuomiAdapterBaseUrl(requestConfig.baseUrl) && config.size.includes(":") ? config.size.trim() : resolveRequestSize(quality, config.size);
     try {
         const response = await axios.post<ImageApiResponse>(
             aiApiUrl(requestConfig, "/images/generations"),
@@ -702,8 +719,10 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
             throw new Error(readAxiosError(error, "请求失败"));
         }
     }
-    const quality = normalizeQuality(config.quality);
-    const requestSize = isDuomiAdapterBaseUrl(requestConfig.baseUrl) && config.size.includes(":") ? config.size.trim() : resolveRequestSize(quality, config.size);
+    const nanoBanana = isDuomiAdapterBaseUrl(requestConfig.baseUrl) && isDuomiNanoBananaModel(requestConfig.model);
+    const nanoBananaConfig = nanoBanana ? resolveDuomiNanoBananaConfig(config) : undefined;
+    const quality = nanoBanana ? nanoBananaConfig?.quality : normalizeQuality(config.quality);
+    const requestSize = nanoBanana ? nanoBananaConfig?.size : isDuomiAdapterBaseUrl(requestConfig.baseUrl) && config.size.includes(":") ? config.size.trim() : resolveRequestSize(quality, config.size);
     if (isDuomiAdapterBaseUrl(requestConfig.baseUrl)) {
         try {
             const files = mask ? [] : await Promise.all(references.map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));

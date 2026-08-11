@@ -64,7 +64,7 @@ describe("V1 routes", () => {
     it("returns health and configured model", async () => {
         const app = await buildApp(config("http://127.0.0.1:1"));
         expect((await app.inject({ method: "GET", url: "/health" })).json()).toEqual({ ok: true, service: "duomi-adapter" });
-        expect((await app.inject({ method: "GET", url: "/v1/models" })).json().data.map((item: { id: string }) => item.id)).toEqual(["gpt-image-2", "veo3.1-fast", "veo3.1-pro", "grok-video", "grok-video-1.5", "kling-v1-6", "kling-v3-omni"]);
+        expect((await app.inject({ method: "GET", url: "/v1/models" })).json().data.map((item: { id: string }) => item.id)).toEqual(["gpt-image-2", "gemini-3-pro-image-preview", "gemini-2.5-flash-image", "gemini-3.1-flash-image-preview", "veo3.1-fast", "veo3.1-pro", "grok-video", "grok-video-1.5", "kling-v1-6", "kling-v3-omni"]);
         await app.close();
     });
 
@@ -103,6 +103,27 @@ describe("V1 routes", () => {
         expect(response.statusCode).toBe(200);
         expect(response.json().data).toEqual([{ url: "https://cdn.test/1.png" }, { url: "https://cdn.test/2.png" }]);
         expect(response.json().created).toEqual(expect.any(Number));
+    });
+
+    it("uses Nano Banana's image endpoint and task polling contract", async () => {
+        let created = 0;
+        const base = await mockServer((request, response, body) => {
+            if (request.method === "POST") {
+                expect(request.url).toBe("/api/gemini/nano-banana");
+                expect(JSON.parse(body)).toEqual({ model: "gemini-3.1-flash-image-preview", prompt: "a banana astronaut", aspect_ratio: "16:9", image_size: "2K" });
+                created += 1;
+                json(response, { code: 200, data: { task_id: `nano-task-${created}` } });
+                return;
+            }
+            const id = request.url?.split("/").at(-1);
+            json(response, { code: 200, data: { task_id: id, state: "succeeded", data: { images: [{ url: `https://cdn.test/${id}.png` }] } } });
+        });
+        const adapterConfig = config(base);
+        const app = await buildApp(adapterConfig, { client: new DuomiClient(adapterConfig) });
+        const response = await app.inject({ method: "POST", url: "/v1/images/generations", payload: { model: "gemini-3.1-flash-image-preview", prompt: "a banana astronaut", size: "16:9", quality: "2K", n: 2 } });
+        expect(response.statusCode).toBe(200);
+        expect(response.json().data).toEqual([{ url: "https://cdn.test/nano-task-1.png" }, { url: "https://cdn.test/nano-task-2.png" }]);
+        await app.close();
     });
 
     it.each([

@@ -2,6 +2,7 @@ import type { FastifyPluginAsync, FastifyRequest } from "fastify";
 
 import { AdapterError } from "../errors.js";
 import { IMAGE_MIME_TYPES, QUALITY_VALUES, imageUrls } from "../media.js";
+import { isNanoBananaModel } from "../nano-banana.js";
 import type { DuomiClient } from "../duomi-client.js";
 import type { AdapterConfig, DuomiImageRequest, ImageEditJsonRequest, ImageGenerationRequest } from "../types.js";
 import type { ReferenceStorage } from "../storage.js";
@@ -21,13 +22,15 @@ export function imageRoutes(config: AdapterConfig, client: DuomiClient, storage?
 function imageRequest(config: AdapterConfig, body: ImageGenerationRequest): DuomiImageRequest {
     const prompt = text(body.prompt);
     validatePrompt(prompt);
+    const model = text(body.model) || config.imageModel;
     const quality = text(body.quality);
-    validateQuality(quality);
+    validateQuality(quality, model);
     return {
-        model: text(body.model) || config.imageModel,
+        model,
         prompt,
         ...(text(body.size) ? { size: text(body.size) } : {}),
         ...(quality ? { quality } : {}),
+        ...(isNanoBananaModel(model) ? { n: imageCount(body.n) } : {}),
     };
 }
 
@@ -36,14 +39,16 @@ function imageEditJsonRequest(config: AdapterConfig, value: unknown): DuomiImage
     if (body.mask) throw maskError();
     const prompt = text(body.prompt);
     validatePrompt(prompt);
+    const model = text(body.model) || config.imageModel;
     const quality = text(body.quality);
-    validateQuality(quality);
+    validateQuality(quality, model);
     return {
-        model: text(body.model) || config.imageModel,
+        model,
         prompt,
         ...(text(body.size) ? { size: text(body.size) } : {}),
         ...(quality ? { quality } : {}),
-        image: imageUrls(body.image, 9),
+        ...(isNanoBananaModel(model) ? { n: imageCount(body.n) } : {}),
+        image: imageUrls(body.image, referenceLimit(text(body.model) || config.imageModel)),
     };
 }
 
@@ -54,7 +59,8 @@ async function imageEditMultipart(request: FastifyRequest, config: AdapterConfig
         if (files.some((file) => file.fieldname === "mask") || fields.mask) throw maskError();
         const images = files.filter((file) => file.fieldname === "image" || file.fieldname === "image[]");
         if (!images.length) throw new AdapterError(400, "At least one reference image is required", "invalid_request_error");
-        if (images.length > 9) throw new AdapterError(400, "A maximum of 9 reference images is supported", "invalid_request_error");
+        const model = fields.model || config.imageModel;
+        if (images.length > referenceLimit(model)) throw new AdapterError(400, `A maximum of ${referenceLimit(model)} reference images is supported`, "invalid_request_error");
         const unexpected = files.find((file) => !["image", "image[]"].includes(file.fieldname));
         if (unexpected) throw new AdapterError(400, `Unsupported file field: ${unexpected.fieldname}`, "invalid_request_error");
         const invalidMime = images.find((file) => !IMAGE_MIME_TYPES.has(file.mimetype));
@@ -63,13 +69,14 @@ async function imageEditMultipart(request: FastifyRequest, config: AdapterConfig
         const prompt = fields.prompt || "";
         validatePrompt(prompt);
         const quality = fields.quality || "";
-        validateQuality(quality);
+        validateQuality(quality, model);
         const urls = await Promise.all(images.map((file) => storage.upload(file)));
         return await client.generateImages({
-            model: fields.model || config.imageModel,
+            model,
             prompt,
             ...(fields.size ? { size: fields.size } : {}),
             ...(quality ? { quality } : {}),
+            ...(isNanoBananaModel(model) ? { n: imageCount(fields.n) } : {}),
             image: urls,
         });
     } finally {
@@ -77,13 +84,25 @@ async function imageEditMultipart(request: FastifyRequest, config: AdapterConfig
     }
 }
 
+function referenceLimit(model: string) {
+    return isNanoBananaModel(model) ? 10 : 9;
+}
+
 function validatePrompt(prompt: string) {
     if (!prompt) throw new AdapterError(400, "prompt is required", "invalid_request_error");
     if (prompt.length > 5000) throw new AdapterError(400, "prompt must not exceed 5000 characters", "invalid_request_error");
 }
 
-function validateQuality(quality: string) {
+function validateQuality(quality: string, model: string) {
+    if (isNanoBananaModel(model)) return;
     if (quality && !QUALITY_VALUES.has(quality)) throw new AdapterError(400, "quality must be low, medium, or high", "invalid_request_error");
+}
+
+function imageCount(value: unknown) {
+    if (value === undefined || value === "") return 1;
+    const count = typeof value === "number" ? value : Number(value);
+    if (!Number.isInteger(count) || count < 1 || count > 15) throw new AdapterError(400, "n must be an integer between 1 and 15", "invalid_request_error");
+    return count;
 }
 
 function maskError() {
