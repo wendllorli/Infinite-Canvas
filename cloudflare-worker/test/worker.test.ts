@@ -107,7 +107,7 @@ describe("Cloudflare Worker routes", () => {
         expect(called).toBe(false);
     });
 
-    it("proxies only the Doubao image endpoint and injects the secret", async () => {
+    it("proxies only the allowed Doubao image endpoint and injects the secret", async () => {
         const calls: Array<{ url: string; authorization: string | null; cookie: string | null; body: unknown }> = [];
         const response = await handleRequest(
             new Request("https://canvas.test/api/ark/api/v3/images/generations", {
@@ -135,6 +135,65 @@ describe("Cloudflare Worker routes", () => {
 
         const rejected = await handleRequest(new Request("https://canvas.test/api/ark/api/v3/models", { method: "POST" }), directEnv({ ARK_API_KEY: "ark-worker-secret" }));
         expect(rejected.status).toBe(404);
+    });
+
+    it("creates and polls Seedance tasks through the protected Ark proxy", async () => {
+        const calls: Array<{ url: string; method: string; authorization: string | null; cookie: string | null; body?: unknown }> = [];
+        const fetchImpl: typeof fetch = async (input, init) => {
+            const headers = new Headers(init?.headers);
+            calls.push({
+                url: String(input),
+                method: init?.method || "GET",
+                authorization: headers.get("Authorization"),
+                cookie: headers.get("Cookie"),
+                ...(init?.body ? { body: await new Response(init.body).json() } : {}),
+            });
+            return init?.method === "POST"
+                ? Response.json({ id: "seedance-task-1", status: "queued" })
+                : Response.json({ id: "seedance-task-1", status: "succeeded", content: { video_url: "https://cdn.test/seedance.mp4" } });
+        };
+        const env = directEnv({ ARK_API_KEY: "ark-worker-secret" });
+        const payload = {
+            model: "doubao-seedance-2-0-260128",
+            content: [{ type: "text", text: "cinematic ocean" }],
+            resolution: "1080p",
+            ratio: "16:9",
+            duration: 5,
+            watermark: false,
+        };
+
+        const created = await handleRequest(
+            new Request("https://canvas.test/api/ark/api/v3/contents/generations/tasks", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: "Bearer browser-placeholder", Cookie: "private-session" },
+                body: JSON.stringify(payload),
+            }),
+            env,
+            fetchImpl,
+        );
+        const polled = await handleRequest(
+            new Request("https://canvas.test/api/ark/api/v3/contents/generations/tasks/seedance-task-1", { headers: { Cookie: "private-session" } }),
+            env,
+            fetchImpl,
+        );
+
+        expect(created.status).toBe(200);
+        expect(polled.status).toBe(200);
+        expect(calls).toEqual([
+            {
+                url: "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks",
+                method: "POST",
+                authorization: "Bearer ark-worker-secret",
+                cookie: null,
+                body: payload,
+            },
+            {
+                url: "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks/seedance-task-1",
+                method: "GET",
+                authorization: "Bearer ark-worker-secret",
+                cookie: null,
+            },
+        ]);
     });
 
     it("uploads one image to the Miniflare R2 binding", async () => {

@@ -101,7 +101,10 @@ async function arkResponse(request: Request, env: Env, fetchImpl: typeof fetch) 
 
     const incoming = new URL(request.url);
     const suffix = incoming.pathname.slice("/api/ark".length) || "/";
-    if (request.method !== "POST" || suffix !== "/api/v3/images/generations") {
+    const isImageGeneration = request.method === "POST" && suffix === "/api/v3/images/generations";
+    const isVideoGeneration = request.method === "POST" && suffix === "/api/v3/contents/generations/tasks";
+    const isVideoTaskQuery = request.method === "GET" && /^\/api\/v3\/contents\/generations\/tasks\/[^/]+$/.test(suffix);
+    if (!isImageGeneration && !isVideoGeneration && !isVideoTaskQuery) {
         return json({ error: { message: "Not found", type: "not_found" } }, 404);
     }
 
@@ -112,9 +115,9 @@ async function arkResponse(request: Request, env: Env, fetchImpl: typeof fetch) 
     headers.delete("cookie");
     headers.set("Authorization", `Bearer ${apiKey}`);
     return fetchImpl(upstream, {
-        method: "POST",
+        method: request.method,
         headers,
-        body: request.body,
+        body: request.method === "GET" ? undefined : request.body,
         redirect: "manual",
     });
 }

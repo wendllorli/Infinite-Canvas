@@ -1,5 +1,5 @@
 import i18n from "@/i18n";
-import { resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
+import { modelOptionName, resolveModelRequestConfig, type AiConfig } from "@/stores/use-config-store";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio, ReferenceVideo } from "@/types/media";
 
@@ -13,13 +13,13 @@ export const SEEDANCE_REFERENCE_LIMITS = {
 };
 export const SEEDANCE_VIDEO_MIME_TYPES = ["video/mp4", "video/quicktime"];
 
-export const seedanceResolutionOptions = [
+const seedanceResolutionOptions = [
     { value: "480p", label: "480p" },
     { value: "720p", label: "720p" },
     { value: "1080p", label: "1080p" },
 ] as const;
 
-export const seedanceRatioOptions = [
+const seedanceRatioOptions = [
     { value: "16:9" },
     { value: "9:16" },
     { value: "1:1" },
@@ -30,6 +30,19 @@ export const seedanceRatioOptions = [
 ] as const;
 
 export const seedanceDurationOptions = [-1, 4, 5, 6, 8, 10, 12, 15] as const;
+
+const managedSeedanceModels = new Set([
+    "doubao-seedance-2-0-260128",
+    "doubao-seedance-2-0-fast-260128",
+    "doubao-seedance-2-0-mini-260615",
+    "doubao-seedance-2-5-260628",
+]);
+const seedance20ProModel = "doubao-seedance-2-0-260128";
+const requestedResolutionOptions = [
+    { value: "720p", label: "720p" },
+    { value: "1080p", label: "1080p" },
+] as const;
+const requestedRatioOptions = [{ value: "16:9" }, { value: "9:16" }] as const;
 
 const seedancePixels = {
     "480p": {
@@ -59,13 +72,29 @@ const seedancePixels = {
 } as const;
 
 export function isSeedanceVideoConfig(config: AiConfig | Pick<AiConfig, "model" | "videoModel" | "apiFormat">) {
-    const requestConfig = "channels" in config ? resolveModelRequestConfig(config, config.model || config.videoModel) : config;
-    return requestConfig.apiFormat === "ark";
+    const requestConfig = "channels" in config ? resolveModelRequestConfig(config, config.videoModel || config.model) : config;
+    return requestConfig.apiFormat === "ark" && seedanceModelName(config).includes("seedance");
 }
 
-export function normalizeSeedanceResolution(value: string) {
+export function seedanceModelName(config: AiConfig | Pick<AiConfig, "model" | "videoModel" | "apiFormat">) {
+    const selected = config.videoModel || config.model;
+    const requestConfig = "channels" in config ? resolveModelRequestConfig(config, selected) : config;
+    return modelOptionName(requestConfig.model || selected).toLowerCase();
+}
+
+export function seedanceResolutionOptionsForModel(model: string) {
+    const name = modelOptionName(model).toLowerCase();
+    if (!managedSeedanceModels.has(name)) return seedanceResolutionOptions;
+    return name === seedance20ProModel ? requestedResolutionOptions : requestedResolutionOptions.slice(0, 1);
+}
+
+export function seedanceRatioOptionsForModel(model: string) {
+    return managedSeedanceModels.has(modelOptionName(model).toLowerCase()) ? requestedRatioOptions : seedanceRatioOptions;
+}
+
+export function normalizeSeedanceResolution(value: string, model = "") {
     const normalized = normalizeResolutionToken(value);
-    return seedanceResolutionOptions.some((item) => item.value === normalized) ? normalized : "720p";
+    return seedanceResolutionOptionsForModel(model).some((item) => item.value === normalized) ? normalized : "720p";
 }
 
 export function normalizeResolutionToken(value: string) {
@@ -81,14 +110,16 @@ export function normalizeSeedanceDuration(value: string) {
     return Math.max(4, Math.min(15, seconds));
 }
 
-export function normalizeSeedanceRatio(value: string) {
-    if (!value || value === "auto" || value === "adaptive") return "adaptive";
-    if (seedanceRatioOptions.some((item) => item.value === value)) return value;
+export function normalizeSeedanceRatio(value: string, model = "") {
+    const optionsForModel = seedanceRatioOptionsForModel(model);
+    const managed = managedSeedanceModels.has(modelOptionName(model).toLowerCase());
+    if (!value || value === "auto" || value === "adaptive") return managed ? "16:9" : "adaptive";
+    if (optionsForModel.some((item) => item.value === value)) return value;
     const match = value.match(/^(\d+)x(\d+)$/);
-    if (!match) return "adaptive";
+    if (!match) return managed ? "16:9" : "adaptive";
     const width = Number(match[1]);
     const height = Number(match[2]);
-    if (!width || !height) return "adaptive";
+    if (!width || !height) return managed ? "16:9" : "adaptive";
     const ratio = width / height;
     const options = [
         ["16:9", 16 / 9],
@@ -98,12 +129,13 @@ export function normalizeSeedanceRatio(value: string) {
         ["9:16", 9 / 16],
         ["21:9", 21 / 9],
     ] as const;
-    return options.reduce((best, item) => (Math.abs(item[1] - ratio) < Math.abs(best[1] - ratio) ? item : best), options[0])[0];
+    const allowedRatios = managed ? options.filter((item) => item[0] === "16:9" || item[0] === "9:16") : options;
+    return allowedRatios.reduce((best, item) => (Math.abs(item[1] - ratio) < Math.abs(best[1] - ratio) ? item : best), allowedRatios[0])[0];
 }
 
-export function seedancePixelLabel(resolution: string, ratio: string) {
-    const normalizedResolution = normalizeSeedanceResolution(resolution) as keyof typeof seedancePixels;
-    const normalizedRatio = normalizeSeedanceRatio(ratio) as keyof (typeof seedancePixels)[typeof normalizedResolution] | "adaptive";
+export function seedancePixelLabel(resolution: string, ratio: string, model = "") {
+    const normalizedResolution = normalizeSeedanceResolution(resolution, model) as keyof typeof seedancePixels;
+    const normalizedRatio = normalizeSeedanceRatio(ratio, model) as keyof (typeof seedancePixels)[typeof normalizedResolution] | "adaptive";
     if (normalizedRatio === "adaptive") return i18n.t("seedance.autoMatch");
     return seedancePixels[normalizedResolution][normalizedRatio] || "";
 }

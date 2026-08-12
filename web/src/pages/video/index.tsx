@@ -914,12 +914,12 @@ function buildLog({ prompt, model, config, references, videoReferences, audioRef
 }
 
 function buildVideoConfig(config: AiConfig, model: string): AiConfig {
-    const seedance = isSeedanceVideoConfig({ ...config, model });
+    const seedance = isSeedanceVideoConfig({ ...config, model, videoModel: model });
     return {
         ...config,
         model,
         videoModel: model,
-        size: seedance ? normalizeSeedanceRatio(config.size) : normalizeVideoSize(config.size),
+        size: seedance ? normalizeSeedanceRatio(config.size, model) : normalizeVideoSize(config.size),
         videoSeconds: normalizeVideoSeconds(config.videoSeconds),
         vquality: normalizeResolution(config.vquality),
         videoGenerateAudio: String(boolConfig(config.videoGenerateAudio, true)),

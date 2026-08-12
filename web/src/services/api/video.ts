@@ -181,8 +181,8 @@ async function createSeedanceTask(config: AiConfig, model: string, prompt: strin
     const payload = {
         model: modelOptionName(model),
         content,
-        ratio: normalizeSeedanceRatio(config.size),
-        resolution: normalizeSeedanceResolution(config.vquality),
+        ratio: normalizeSeedanceRatio(config.size, model),
+        resolution: normalizeSeedanceResolution(config.vquality, model),
         duration: normalizeSeedanceDuration(config.videoSeconds),
         generate_audio: boolConfig(config.videoGenerateAudio, true),
         watermark: boolConfig(config.videoWatermark, false),

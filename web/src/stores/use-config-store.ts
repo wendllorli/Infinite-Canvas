@@ -80,6 +80,12 @@ const ARK_MODELS: ChannelModel[] = [
     { name: "doubao-seedream-5-0lite", capability: "image" },
     { name: "doubao-seedream-5-0pro", capability: "image" },
 ];
+const SEEDANCE_MODELS: ChannelModel[] = [
+    { name: "doubao-seedance-2-0-260128", capability: "video" },
+    { name: "doubao-seedance-2-0-fast-260128", capability: "video" },
+    { name: "doubao-seedance-2-0-mini-260615", capability: "video" },
+    { name: "doubao-seedance-2-5-260628", capability: "video" },
+];
 const DUOMI_MODELS: ChannelModel[] = [
     { name: "gpt-image-2", capability: "image" },
     { name: "veo3.1-fast", capability: "video" },
@@ -128,6 +134,14 @@ export const defaultConfig: AiConfig = {
             apiFormat: "ark",
             models: ARK_MODELS,
         },
+        {
+            id: "doubao-seedance",
+            name: "豆包 Seedance",
+            baseUrl: ARK_PROXY_BASE_URL,
+            apiKey: "cloudflare-ark",
+            apiFormat: "ark",
+            models: SEEDANCE_MODELS,
+        },
     ],
     model: "default::gpt-image-2",
     imageModel: "default::gpt-image-2",
@@ -149,6 +163,7 @@ export const defaultConfig: AiConfig = {
         "chatgpt-discount::gpt-image-2",
         ...GEMINI_IMAGE_MODELS.map((model) => `gemini-image::${model.name}`),
         ...ARK_MODELS.map((model) => `doubao-seedream-5-0::${model.name}`),
+        ...SEEDANCE_MODELS.map((model) => `doubao-seedance::${model.name}`),
     ],
     quality: "high",
     size: "1:1",
@@ -362,6 +377,17 @@ export function createDoubaoChannel(): ModelChannel {
     });
 }
 
+export function createDoubaoSeedanceChannel(): ModelChannel {
+    return createModelChannel({
+        id: "doubao-seedance",
+        name: "豆包 Seedance",
+        baseUrl: ARK_PROXY_BASE_URL,
+        apiKey: "cloudflare-ark",
+        apiFormat: "ark",
+        models: SEEDANCE_MODELS,
+    });
+}
+
 export function createGeminiImageChannel(): ModelChannel {
     return createModelChannel({
         id: "gemini-image",
@@ -395,8 +421,16 @@ export function modelOptionLabel(config: AiConfig, value: string) {
     const decoded = decodeChannelModel(value);
     if (!decoded) return value;
     const channel = config.channels.find((item) => item.id === decoded.channelId);
-    return channel ? `${decoded.model}（${channel.name}）` : decoded.model;
+    const displayName = SEEDANCE_MODEL_LABELS[decoded.model] || decoded.model;
+    return channel ? `${displayName}（${channel.name}）` : displayName;
 }
+
+const SEEDANCE_MODEL_LABELS: Record<string, string> = {
+    "doubao-seedance-2-0-260128": "Seedance 2.0 Pro",
+    "doubao-seedance-2-0-fast-260128": "Seedance 2.0 Fast",
+    "doubao-seedance-2-0-mini-260615": "Seedance 2.0 Mini",
+    "doubao-seedance-2-5-260628": "Seedance 2.5",
+};
 
 export function modelOptionsFromChannels(channels: ModelChannel[]) {
     return uniqueModelOptions(channels.flatMap((channel) => channel.models.map((model) => encodeChannelModel(channel.id, model.name))));
@@ -460,8 +494,12 @@ function normalizeChannels(config: AiConfig) {
             channels[index] = { ...channel, models: normalizeChannelModels([...channel.models, ...DUOMI_MODELS]) };
             continue;
         }
-        if (channel.id === "doubao-seedream-5-0" || isDoubaoProxyChannel(channel)) {
+        if (isDoubaoSeedreamChannel(channel)) {
             channels[index] = { ...channel, models: normalizeChannelModels([...channel.models, ...ARK_MODELS]) };
+            continue;
+        }
+        if (isDoubaoSeedanceChannel(channel)) {
+            channels[index] = { ...channel, models: normalizeChannelModels([...channel.models, ...SEEDANCE_MODELS]) };
             continue;
         }
         if (channel.apiFormat === "gemini") {
@@ -471,8 +509,11 @@ function normalizeChannels(config: AiConfig) {
     if (!channels.some((channel) => channel.id === "chatgpt-discount" || channel.name === "chatgpt-特价版")) {
         channels.push(createChatgptDiscountChannel());
     }
-    if (!channels.some((channel) => channel.id === "doubao-seedream-5-0" || isDoubaoProxyChannel(channel))) {
+    if (!channels.some(isDoubaoSeedreamChannel)) {
         channels.push(createDoubaoChannel());
+    }
+    if (!channels.some(isDoubaoSeedanceChannel)) {
+        channels.push(createDoubaoSeedanceChannel());
     }
     if (!channels.some((channel) => channel.apiFormat === "gemini")) {
         channels.push(createGeminiImageChannel());
@@ -485,9 +526,13 @@ function isDuomiChannel(channel: Pick<ModelChannel, "baseUrl">) {
     return baseUrl === DUOMI_BASE_URL || baseUrl.endsWith("/api/duomi/v1");
 }
 
-function isDoubaoProxyChannel(channel: Pick<ModelChannel, "baseUrl">) {
-    const baseUrl = channel.baseUrl.trim().replace(/\/+$/, "");
-    return baseUrl === ARK_PROXY_BASE_URL || baseUrl.endsWith(ARK_PROXY_BASE_URL);
+function isDoubaoSeedreamChannel(channel: Pick<ModelChannel, "id" | "models">) {
+    return channel.id === "doubao-seedream-5-0" || channel.models.some((model) => model.name.includes("seedream"));
+}
+
+function isDoubaoSeedanceChannel(channel: Pick<ModelChannel, "id" | "models">) {
+    const names = channel.models.map((model) => model.name);
+    return channel.id === "doubao-seedance" || (names.some((name) => name.includes("seedance")) && !names.some((name) => name.includes("seedream")));
 }
 
 export function defaultBaseUrlForApiFormat(apiFormat: ApiCallFormat) {
