@@ -1,4 +1,5 @@
 DUOMI_API_KEY=填写真实密钥
+ARK_API_KEY=填写真实密钥
 CHATGPT_DISCOUNT_BASE_URL=https://your-chatgpt2api.example.com
 CHATGPT_DISCOUNT_AUTH_KEY=填写真实密钥
 SITE_PASSWORD=填写本地访问口令

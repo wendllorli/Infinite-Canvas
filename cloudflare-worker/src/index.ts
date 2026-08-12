@@ -19,6 +19,7 @@ export interface Env {
     SITE_PASSWORD?: string;
     CHATGPT_DISCOUNT_BASE_URL?: string;
     CHATGPT_DISCOUNT_AUTH_KEY?: string;
+    ARK_API_KEY?: string;
 }
 
 const API_PREFIX = "/api/duomi";
@@ -44,6 +45,9 @@ export async function handleRequest(request: Request, env: Env, fetchImpl: typeo
     const url = new URL(request.url);
     if (url.pathname === "/api/chatgpt-discount" || url.pathname.startsWith("/api/chatgpt-discount/")) {
         return chatgptDiscountResponse(request, env, fetchImpl);
+    }
+    if (url.pathname === "/api/ark" || url.pathname.startsWith("/api/ark/")) {
+        return arkResponse(request, env, fetchImpl);
     }
     if (!url.pathname.startsWith(`${API_PREFIX}/`) && url.pathname !== API_PREFIX) {
         return env.ASSETS ? env.ASSETS.fetch(request) : json({ error: { message: "Not found", type: "not_found" } }, 404);
@@ -87,6 +91,30 @@ async function chatgptDiscountResponse(request: Request, env: Env, fetchImpl: ty
         method: request.method,
         headers,
         body: request.method === "GET" || request.method === "HEAD" ? undefined : request.body,
+        redirect: "manual",
+    });
+}
+
+async function arkResponse(request: Request, env: Env, fetchImpl: typeof fetch) {
+    const apiKey = env.ARK_API_KEY?.trim();
+    if (!apiKey) return json({ error: { message: "豆包密钥尚未配置", type: "configuration_error" } }, 503);
+
+    const incoming = new URL(request.url);
+    const suffix = incoming.pathname.slice("/api/ark".length) || "/";
+    if (request.method !== "POST" || suffix !== "/api/v3/images/generations") {
+        return json({ error: { message: "Not found", type: "not_found" } }, 404);
+    }
+
+    const upstream = new URL(suffix, "https://ark.cn-beijing.volces.com");
+    upstream.search = incoming.search;
+    const headers = new Headers(request.headers);
+    headers.delete("host");
+    headers.delete("cookie");
+    headers.set("Authorization", `Bearer ${apiKey}`);
+    return fetchImpl(upstream, {
+        method: "POST",
+        headers,
+        body: request.body,
         redirect: "manual",
     });
 }

@@ -40,6 +40,7 @@ npm run build
 ```bash
 cd cloudflare-worker
 npx wrangler secret put DUOMI_API_KEY
+npx wrangler secret put ARK_API_KEY
 npx wrangler secret put SITE_PASSWORD
 npx wrangler secret put CHATGPT_DISCOUNT_AUTH_KEY
 ```
@@ -62,7 +63,9 @@ Build command: cd web && npm ci && npm run build && cd ../cloudflare-worker && n
 Deploy command: cd cloudflare-worker && npm run deploy
 ```
 
-在 Cloudflare 项目设置中创建 `DUOMI_API_KEY` Secret，并确认 R2 binding 名称保持为 `REFERENCES`。部署后将主域名加入 Cloudflare Access，只允许自己的邮箱或身份提供方访问。
+在 Cloudflare 项目设置中创建 `DUOMI_API_KEY` 和 `ARK_API_KEY` Secret，并确认 R2 binding 名称保持为 `REFERENCES`。部署后将主域名加入 Cloudflare Access，只允许自己的邮箱或身份提供方访问。
+
+豆包 Seedream Lite 和 Pro 共用 `ARK_API_KEY`，网页内置通道使用 `/api/ark/api/v3`，真实密钥不会进入浏览器或 GitHub。
 
 ## infinite-canvas 配置
 

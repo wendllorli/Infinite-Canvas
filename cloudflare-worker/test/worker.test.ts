@@ -89,6 +89,54 @@ describe("Cloudflare Worker routes", () => {
         expect(body).not.toContain("worker-test-secret");
     });
 
+    it("requires the Cloudflare secret before proxying Doubao", async () => {
+        let called = false;
+        const response = await handleRequest(
+            new Request("https://canvas.test/api/ark/api/v3/images/generations", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ model: "doubao-seedream-5-0-pro-260628", prompt: "test" }),
+            }),
+            directEnv(),
+            async () => {
+                called = true;
+                return Response.json({});
+            },
+        );
+        expect(response.status).toBe(503);
+        expect(called).toBe(false);
+    });
+
+    it("proxies only the Doubao image endpoint and injects the secret", async () => {
+        const calls: Array<{ url: string; authorization: string | null; cookie: string | null; body: unknown }> = [];
+        const response = await handleRequest(
+            new Request("https://canvas.test/api/ark/api/v3/images/generations", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: "Bearer browser-placeholder", Cookie: "private-session" },
+                body: JSON.stringify({ model: "doubao-seedream-5-0-pro-260628", prompt: "test", watermark: false }),
+            }),
+            directEnv({ ARK_API_KEY: "ark-worker-secret" }),
+            async (input, init) => {
+                const headers = new Headers(init?.headers);
+                const body = init?.body ? await new Response(init.body).json() : undefined;
+                calls.push({ url: String(input), authorization: headers.get("Authorization"), cookie: headers.get("Cookie"), body });
+                return Response.json({ data: [{ url: "https://cdn.test/doubao.png" }] });
+            },
+        );
+        expect(response.status).toBe(200);
+        expect(calls).toEqual([
+            {
+                url: "https://ark.cn-beijing.volces.com/api/v3/images/generations",
+                authorization: "Bearer ark-worker-secret",
+                cookie: null,
+                body: { model: "doubao-seedream-5-0-pro-260628", prompt: "test", watermark: false },
+            },
+        ]);
+
+        const rejected = await handleRequest(new Request("https://canvas.test/api/ark/api/v3/models", { method: "POST" }), directEnv({ ARK_API_KEY: "ark-worker-secret" }));
+        expect(rejected.status).toBe(404);
+    });
+
     it("uploads one image to the Miniflare R2 binding", async () => {
         const form = new RuntimeFormData();
         form.set("image", image());
