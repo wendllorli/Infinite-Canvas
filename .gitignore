@@ -9,8 +9,9 @@ data/
 .DS_Store
 .idea
 web/dist
-duomi-adapter/dist/
-cloudflare-worker/.dev.vars
-cloudflare-worker/.wrangler/
-cloudflare-worker/dist/
-cloudflare-worker/dist-test/
+
+**/dist
+web/public/plugins
+plugins/canvas/*/dist
+plugins/canvas/*/node_modules
+web/public/plugins

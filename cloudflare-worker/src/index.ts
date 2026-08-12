@@ -17,6 +17,8 @@ export interface Env {
     DUOMI_VIDEO_MODELS?: string;
     STORAGE_PUBLIC_BASE_URL?: string;
     SITE_PASSWORD?: string;
+    CHATGPT_DISCOUNT_BASE_URL?: string;
+    CHATGPT_DISCOUNT_AUTH_KEY?: string;
 }
 
 const API_PREFIX = "/api/duomi";
@@ -40,6 +42,9 @@ export async function handleRequest(request: Request, env: Env, fetchImpl: typeo
     if (authResponse) return authResponse;
 
     const url = new URL(request.url);
+    if (url.pathname === "/api/chatgpt-discount" || url.pathname.startsWith("/api/chatgpt-discount/")) {
+        return chatgptDiscountResponse(request, env, fetchImpl);
+    }
     if (!url.pathname.startsWith(`${API_PREFIX}/`) && url.pathname !== API_PREFIX) {
         return env.ASSETS ? env.ASSETS.fetch(request) : json({ error: { message: "Not found", type: "not_found" } }, 404);
     }
@@ -65,6 +70,25 @@ export async function handleRequest(request: Request, env: Env, fetchImpl: typeo
         return json(mapVideoTask(id, await client.getVideoTask(id)));
     }
     return json({ error: { message: "Not found", type: "not_found" } }, 404);
+}
+
+async function chatgptDiscountResponse(request: Request, env: Env, fetchImpl: typeof fetch) {
+    const baseUrl = env.CHATGPT_DISCOUNT_BASE_URL?.trim().replace(/\/+$/, "");
+    if (!baseUrl) return json({ error: { message: "chatgpt-特价版后端尚未配置", type: "configuration_error" } }, 503);
+    const incoming = new URL(request.url);
+    const suffix = incoming.pathname.slice("/api/chatgpt-discount".length) || "/";
+    const upstream = new URL(`${baseUrl}${suffix}`);
+    upstream.search = incoming.search;
+    const headers = new Headers(request.headers);
+    headers.delete("host");
+    headers.delete("cookie");
+    if (env.CHATGPT_DISCOUNT_AUTH_KEY?.trim()) headers.set("Authorization", `Bearer ${env.CHATGPT_DISCOUNT_AUTH_KEY.trim()}`);
+    return fetchImpl(upstream, {
+        method: request.method,
+        headers,
+        body: request.method === "GET" || request.method === "HEAD" ? undefined : request.body,
+        redirect: "manual",
+    });
 }
 
 export function defaultImageUpstreamRequestBudget(timeoutMs = DEFAULT_TIMEOUT_MS, pollIntervalMs = DEFAULT_POLL_INTERVAL_MS) {

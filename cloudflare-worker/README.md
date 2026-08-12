@@ -41,7 +41,10 @@ npm run build
 cd cloudflare-worker
 npx wrangler secret put DUOMI_API_KEY
 npx wrangler secret put SITE_PASSWORD
+npx wrangler secret put CHATGPT_DISCOUNT_AUTH_KEY
 ```
+
+线上使用 `chatgpt-特价版` 时，还需在 Worker 变量中配置 `CHATGPT_DISCOUNT_BASE_URL`，指向你单独部署的 ChatGPT2API 服务。Worker 会代理 `/api/chatgpt-discount/*`，真实鉴权密钥仅保存在 Worker Secret 中。
 
 设置 `SITE_PASSWORD` 后，Worker 会在网页和全部 `/api/duomi/*` 接口前增加口令锁。口令只保存在 Worker Secret，不会写入网页代码或 Git；验证成功后使用 HttpOnly Cookie 保持当前浏览器会话。
 
