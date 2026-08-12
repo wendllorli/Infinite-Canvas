@@ -141,9 +141,9 @@ function arkImagePayload(config: AiConfig, prompt: string, images?: string[]) {
     return {
         model: ARK_IMAGE_MODEL_ALIASES[config.model] || config.model,
         prompt: withSystemPrompt(config, prompt),
-        ...(images?.length ? { image: images } : {}),
+        ...(images?.length ? { image: images.length === 1 ? images[0] : images } : {}),
         ...(size ? { size } : {}),
-        sequential_image_generation: "disabled",
+        output_format: IMAGE_OUTPUT_FORMAT,
         response_format: "url",
         stream: false,
         watermark: config.imageWatermark === "true",
