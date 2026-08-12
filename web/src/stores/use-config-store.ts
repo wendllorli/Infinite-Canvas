@@ -70,6 +70,12 @@ const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com";
 const ARK_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3";
 const ARK_PROXY_BASE_URL = "/api/ark/api/v3";
 const DUOMI_BASE_URL = "/api/duomi/v1";
+const GEMINI_IMAGE_MODELS: ChannelModel[] = [
+    { name: "gemini-3.1-flash-lite-image", capability: "image" },
+    { name: "gemini-3.1-flash-image", capability: "image" },
+    { name: "gemini-3-pro-image-preview", capability: "image" },
+    { name: "gemini-2.5-flash-image", capability: "image" },
+];
 const ARK_MODELS: ChannelModel[] = [
     { name: "doubao-seedream-5-0lite", capability: "image" },
     { name: "doubao-seedream-5-0pro", capability: "image" },
@@ -107,6 +113,14 @@ export const defaultConfig: AiConfig = {
             models: [{ name: "gpt-image-2", capability: "image" }],
         },
         {
+            id: "gemini-image",
+            name: "Gemini 生图",
+            baseUrl: GEMINI_BASE_URL,
+            apiKey: "",
+            apiFormat: "gemini",
+            models: GEMINI_IMAGE_MODELS,
+        },
+        {
             id: "doubao-seedream-5-0",
             name: "豆包 Seedream 5.0",
             baseUrl: ARK_PROXY_BASE_URL,
@@ -130,7 +144,12 @@ export const defaultConfig: AiConfig = {
     videoWatermark: "false",
     systemPrompt: "",
     reasoningEffort: "auto",
-    models: [...DUOMI_MODELS.map((model) => `default::${model.name}`), "chatgpt-discount::gpt-image-2", ...ARK_MODELS.map((model) => `doubao-seedream-5-0::${model.name}`)],
+    models: [
+        ...DUOMI_MODELS.map((model) => `default::${model.name}`),
+        "chatgpt-discount::gpt-image-2",
+        ...GEMINI_IMAGE_MODELS.map((model) => `gemini-image::${model.name}`),
+        ...ARK_MODELS.map((model) => `doubao-seedream-5-0::${model.name}`),
+    ],
     quality: "high",
     size: "1:1",
     background: "",
@@ -343,6 +362,17 @@ export function createDoubaoChannel(): ModelChannel {
     });
 }
 
+export function createGeminiImageChannel(): ModelChannel {
+    return createModelChannel({
+        id: "gemini-image",
+        name: "Gemini 生图",
+        baseUrl: GEMINI_BASE_URL,
+        apiKey: "",
+        apiFormat: "gemini",
+        models: GEMINI_IMAGE_MODELS,
+    });
+}
+
 export function encodeChannelModel(channelId: string, model: string) {
     return `${channelId}${CHANNEL_MODEL_SEPARATOR}${model.trim()}`;
 }
@@ -425,14 +455,27 @@ function normalizeChannels(config: AiConfig) {
         );
     }
     for (let index = 0; index < channels.length; index += 1) {
-        if (!isDuomiChannel(channels[index]!)) continue;
-        channels[index] = { ...channels[index]!, models: normalizeChannelModels([...channels[index]!.models, ...DUOMI_MODELS]) };
+        const channel = channels[index]!;
+        if (isDuomiChannel(channel)) {
+            channels[index] = { ...channel, models: normalizeChannelModels([...channel.models, ...DUOMI_MODELS]) };
+            continue;
+        }
+        if (channel.id === "doubao-seedream-5-0" || isDoubaoProxyChannel(channel)) {
+            channels[index] = { ...channel, models: normalizeChannelModels([...channel.models, ...ARK_MODELS]) };
+            continue;
+        }
+        if (channel.apiFormat === "gemini") {
+            channels[index] = { ...channel, models: normalizeChannelModels([...channel.models, ...GEMINI_IMAGE_MODELS]) };
+        }
     }
     if (!channels.some((channel) => channel.id === "chatgpt-discount" || channel.name === "chatgpt-特价版")) {
         channels.push(createChatgptDiscountChannel());
     }
     if (!channels.some((channel) => channel.id === "doubao-seedream-5-0" || isDoubaoProxyChannel(channel))) {
         channels.push(createDoubaoChannel());
+    }
+    if (!channels.some((channel) => channel.apiFormat === "gemini")) {
+        channels.push(createGeminiImageChannel());
     }
     return channels;
 }
