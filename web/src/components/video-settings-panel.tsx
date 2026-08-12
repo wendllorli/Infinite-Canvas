@@ -6,7 +6,7 @@ import i18n from "@/i18n";
 import { ImageSettingsTheme } from "@/components/image-settings-panel";
 import { boolConfig, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceDurationOptions, seedanceModelName, seedancePixelLabel, seedanceRatioOptionsForModel, seedanceResolutionOptionsForModel } from "@/lib/seedance-video";
 import { type CanvasTheme } from "@/lib/canvas-theme";
-import { type AiConfig } from "@/stores/use-config-store";
+import { modelMatchesCapability, type AiConfig } from "@/stores/use-config-store";
 
 const resolutionOptions = [
     { value: "720", label: "720p" },
@@ -39,7 +39,8 @@ type VideoSettingsPanelProps = {
 
 export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = true, className = "w-[320px] space-y-4 rounded-2xl px-1 py-0.5" }: VideoSettingsPanelProps) {
     const { t } = useTranslation();
-    if (isSeedanceVideoConfig(config)) {
+    const selectedModel = selectedVideoModel(config);
+    if (isSeedanceVideoConfig(config, selectedModel)) {
         return <SeedanceVideoSettingsPanel config={config} onConfigChange={onConfigChange} theme={theme} showTitle={showTitle} className={className} />;
     }
 
@@ -110,7 +111,7 @@ export function VideoSettingsPanel({ config, onConfigChange, theme, showTitle = 
 
 function SeedanceVideoSettingsPanel({ config, onConfigChange, theme, showTitle, className }: VideoSettingsPanelProps) {
     const { t } = useTranslation();
-    const model = seedanceModelName(config);
+    const model = seedanceModelName(config, selectedVideoModel(config));
     const resolutionOptions = seedanceResolutionOptionsForModel(model);
     const ratioOptions = seedanceRatioOptionsForModel(model);
     const resolution = normalizeSeedanceResolution(config.vquality, model);
@@ -169,6 +170,10 @@ function SeedanceVideoSettingsPanel({ config, onConfigChange, theme, showTitle, 
             </div>
         </ImageSettingsTheme>
     );
+}
+
+function selectedVideoModel(config: AiConfig) {
+    return modelMatchesCapability(config, config.model, "video") ? config.model : config.videoModel;
 }
 
 export function videoResolutionLabel(value: string) {

@@ -64,7 +64,7 @@ export async function createVideoGenerationTask(config: AiConfig, prompt: string
     const script = resolveModelScript(config, selectedModel);
     if (script) return createPluginVideoTask(requestConfig, selectedModel, script, prompt, references, options);
     assertVideoConfig(requestConfig, requestConfig.model);
-    if (isSeedanceVideoConfig(requestConfig)) {
+    if (isSeedanceVideoConfig(requestConfig, selectedModel)) {
         return createSeedanceTask(requestConfig, selectedModel, prompt, references, videoReferences, audioReferences, options);
     }
     if (videoReferences.length || audioReferences.length) {

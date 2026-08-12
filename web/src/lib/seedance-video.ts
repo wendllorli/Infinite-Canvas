@@ -71,15 +71,14 @@ const seedancePixels = {
     },
 } as const;
 
-export function isSeedanceVideoConfig(config: AiConfig | Pick<AiConfig, "model" | "videoModel" | "apiFormat">) {
-    const requestConfig = "channels" in config ? resolveModelRequestConfig(config, config.videoModel || config.model) : config;
-    return requestConfig.apiFormat === "ark" && seedanceModelName(config).includes("seedance");
+export function isSeedanceVideoConfig(config: AiConfig | Pick<AiConfig, "model" | "videoModel" | "apiFormat">, selectedModel: string) {
+    const requestConfig = "channels" in config ? resolveModelRequestConfig(config, selectedModel) : config;
+    return requestConfig.apiFormat === "ark" && seedanceModelName(config, selectedModel).includes("seedance");
 }
 
-export function seedanceModelName(config: AiConfig | Pick<AiConfig, "model" | "videoModel" | "apiFormat">) {
-    const selected = config.videoModel || config.model;
-    const requestConfig = "channels" in config ? resolveModelRequestConfig(config, selected) : config;
-    return modelOptionName(requestConfig.model || selected).toLowerCase();
+export function seedanceModelName(config: AiConfig | Pick<AiConfig, "model" | "videoModel" | "apiFormat">, selectedModel: string) {
+    const requestConfig = "channels" in config ? resolveModelRequestConfig(config, selectedModel) : config;
+    return modelOptionName("channels" in config ? requestConfig.model : selectedModel).toLowerCase();
 }
 
 export function seedanceResolutionOptionsForModel(model: string) {

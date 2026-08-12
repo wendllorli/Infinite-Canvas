@@ -914,7 +914,7 @@ function buildLog({ prompt, model, config, references, videoReferences, audioRef
 }
 
 function buildVideoConfig(config: AiConfig, model: string): AiConfig {
-    const seedance = isSeedanceVideoConfig({ ...config, model, videoModel: model });
+    const seedance = isSeedanceVideoConfig({ ...config, model, videoModel: model }, model);
     return {
         ...config,
         model,
