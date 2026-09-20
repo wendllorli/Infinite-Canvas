@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## 2026-09-20
+
++ [Changed] Keep the v0.19.0 frontend and retain only the Cloudflare Worker, Duomi Adapter, and Seedance backend proxy integration. Seedance is configured manually or through a custom model-call script.
+
 ## Unreleased
 
 + [调整] 默认生图模型由 `gpt-image-2` 替换为 `gpt-image-2.5-flare`，新增 `gpt-image-2.5-sunburst`，并支持每 25 秒查询一次异步生图任务。
