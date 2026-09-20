@@ -50,4 +50,13 @@ export default defineConfig({
         __APP_VERSION__: JSON.stringify(localVersion),
         __APP_RELEASES__: JSON.stringify(parseChangelog(localChangelog)),
     },
+    server: {
+        proxy: {
+            "/api/chatgpt-discount": {
+                target: "http://localhost:3001",
+                changeOrigin: true,
+                rewrite: (path) => path.replace(/^\/api\/chatgpt-discount/, ""),
+            },
+        },
+    },
 });

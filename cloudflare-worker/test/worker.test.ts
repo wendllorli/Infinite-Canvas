@@ -1,0 +1,415 @@
+import { resolve } from "node:path";
+import { File } from "node:buffer";
+
+import { FormData as RuntimeFormData, Miniflare } from "miniflare";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import { defaultImageUpstreamRequestBudget, handleRequest, type Env } from "../src/index";
+
+const bindings = {
+    DUOMI_API_BASE: "https://duomi.test",
+    DUOMI_API_KEY: "worker-test-secret",
+    DUOMI_AUTH_MODE: "raw",
+    DUOMI_POLL_INTERVAL_MS: "25000",
+    DUOMI_TIMEOUT_MS: "600000",
+    DUOMI_IMAGE_MODEL: "gpt-image-2.5-flare",
+    DUOMI_VIDEO_MODELS: "veo3.1-fast,veo3.1-pro,grok-video,grok-video-1.5,kling-v1-6,kling-v3-omni",
+    STORAGE_PUBLIC_BASE_URL: "https://media.example.com",
+};
+
+let runtime: Miniflare;
+
+beforeAll(() => {
+    runtime = new Miniflare({
+        modules: true,
+        scriptPath: resolve("dist-test/index.js"),
+        compatibilityDate: "2026-07-15",
+        r2Buckets: ["REFERENCES"],
+        bindings,
+    });
+});
+
+afterAll(async () => runtime.dispose());
+
+function image(name = "reference.png", bytes: string | Uint8Array<ArrayBuffer> = new Uint8Array([137, 80, 78, 71]), type = "image/png") {
+    return new File([bytes], name, { type });
+}
+
+function directEnv(overrides: Partial<Env> = {}): Env {
+    return { ...bindings, REFERENCES: {} as R2Bucket, ...overrides };
+}
+
+describe("Cloudflare Worker routes", () => {
+    it("locks the site and Duomi API until the correct password is entered", async () => {
+        const protectedEnv = directEnv({ SITE_PASSWORD: "test-password", ASSETS: { fetch: async () => new Response("spa-index") } as unknown as Fetcher });
+        const page = await handleRequest(new Request("https://canvas.test/", { headers: { Accept: "text/html" } }), protectedEnv);
+        const html = await page.text();
+        expect(page.status).toBe(200);
+        expect(html).toContain("请输入访问口令");
+        expect(html).not.toContain("test-password");
+
+        const lockedApi = await handleRequest(new Request("https://canvas.test/api/duomi/health"), protectedEnv);
+        expect(lockedApi.status).toBe(401);
+        expect(await lockedApi.json()).toEqual({ error: { message: "请先输入访问口令解锁画布", type: "site_locked" } });
+
+        const wrong = await handleRequest(
+            new Request("https://canvas.test/api/site-auth/unlock", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ password: "wrong" }),
+            }),
+            protectedEnv,
+        );
+        expect(wrong.status).toBe(401);
+        expect(wrong.headers.get("set-cookie")).toBeNull();
+
+        const unlocked = await handleRequest(
+            new Request("https://canvas.test/api/site-auth/unlock", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ password: "test-password" }),
+            }),
+            protectedEnv,
+        );
+        expect(unlocked.status).toBe(200);
+        const cookie = unlocked.headers.get("set-cookie")?.split(";", 1)[0];
+        expect(cookie).toMatch(/^infinite_canvas_session=/);
+
+        const health = await handleRequest(new Request("https://canvas.test/api/duomi/health", { headers: { Cookie: cookie! } }), protectedEnv);
+        expect(health.status).toBe(200);
+        expect(await health.json()).toEqual({ ok: true, service: "duomi-adapter" });
+    });
+
+    it("serves health and models without exposing the secret", async () => {
+        const health = await runtime.dispatchFetch("https://canvas.test/api/duomi/health");
+        expect(await health.json()).toEqual({ ok: true, service: "duomi-adapter" });
+        const models = await runtime.dispatchFetch("https://canvas.test/api/duomi/v1/models");
+        const body = await models.text();
+        expect(JSON.parse(body).data[0].id).toBe("gpt-image-2.5-flare");
+        expect(body).not.toContain("worker-test-secret");
+    });
+
+    it("requires the Cloudflare secret before proxying Doubao", async () => {
+        let called = false;
+        const response = await handleRequest(
+            new Request("https://canvas.test/api/ark/api/v3/images/generations", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ model: "doubao-seedream-5-0-pro-260628", prompt: "test" }),
+            }),
+            directEnv(),
+            async () => {
+                called = true;
+                return Response.json({});
+            },
+        );
+        expect(response.status).toBe(503);
+        expect(called).toBe(false);
+    });
+
+    it("proxies only the allowed Doubao image endpoint and injects the secret", async () => {
+        const calls: Array<{ url: string; authorization: string | null; cookie: string | null; body: unknown }> = [];
+        const response = await handleRequest(
+            new Request("https://canvas.test/api/ark/api/v3/images/generations", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: "Bearer browser-placeholder", Cookie: "private-session" },
+                body: JSON.stringify({ model: "doubao-seedream-5-0-pro-260628", prompt: "test", watermark: false }),
+            }),
+            directEnv({ ARK_API_KEY: "ark-worker-secret" }),
+            async (input, init) => {
+                const headers = new Headers(init?.headers);
+                const body = init?.body ? await new Response(init.body).json() : undefined;
+                calls.push({ url: String(input), authorization: headers.get("Authorization"), cookie: headers.get("Cookie"), body });
+                return Response.json({ data: [{ url: "https://cdn.test/doubao.png" }] });
+            },
+        );
+        expect(response.status).toBe(200);
+        expect(calls).toEqual([
+            {
+                url: "https://ark.cn-beijing.volces.com/api/v3/images/generations",
+                authorization: "Bearer ark-worker-secret",
+                cookie: null,
+                body: { model: "doubao-seedream-5-0-pro-260628", prompt: "test", watermark: false },
+            },
+        ]);
+
+        const rejected = await handleRequest(new Request("https://canvas.test/api/ark/api/v3/models", { method: "POST" }), directEnv({ ARK_API_KEY: "ark-worker-secret" }));
+        expect(rejected.status).toBe(404);
+    });
+
+    it("creates and polls Seedance tasks through the protected Ark proxy", async () => {
+        const calls: Array<{ url: string; method: string; authorization: string | null; cookie: string | null; body?: unknown }> = [];
+        const fetchImpl: typeof fetch = async (input, init) => {
+            const headers = new Headers(init?.headers);
+            calls.push({
+                url: String(input),
+                method: init?.method || "GET",
+                authorization: headers.get("Authorization"),
+                cookie: headers.get("Cookie"),
+                ...(init?.body ? { body: await new Response(init.body).json() } : {}),
+            });
+            return init?.method === "POST"
+                ? Response.json({ id: "seedance-task-1", status: "queued" })
+                : Response.json({ id: "seedance-task-1", status: "succeeded", content: { video_url: "https://cdn.test/seedance.mp4" } });
+        };
+        const env = directEnv({ ARK_API_KEY: "ark-worker-secret" });
+        const payload = {
+            model: "doubao-seedance-2-0-260128",
+            content: [{ type: "text", text: "cinematic ocean" }],
+            resolution: "1080p",
+            ratio: "16:9",
+            duration: 5,
+            watermark: false,
+        };
+
+        const created = await handleRequest(
+            new Request("https://canvas.test/api/ark/api/v3/contents/generations/tasks", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: "Bearer browser-placeholder", Cookie: "private-session" },
+                body: JSON.stringify(payload),
+            }),
+            env,
+            fetchImpl,
+        );
+        const polled = await handleRequest(
+            new Request("https://canvas.test/api/ark/api/v3/contents/generations/tasks/seedance-task-1", { headers: { Cookie: "private-session" } }),
+            env,
+            fetchImpl,
+        );
+
+        expect(created.status).toBe(200);
+        expect(polled.status).toBe(200);
+        expect(calls).toEqual([
+            {
+                url: "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks",
+                method: "POST",
+                authorization: "Bearer ark-worker-secret",
+                cookie: null,
+                body: payload,
+            },
+            {
+                url: "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks/seedance-task-1",
+                method: "GET",
+                authorization: "Bearer ark-worker-secret",
+                cookie: null,
+            },
+        ]);
+    });
+
+    it("uploads one image to the Miniflare R2 binding", async () => {
+        const form = new RuntimeFormData();
+        form.set("image", image());
+        const response = await runtime.dispatchFetch("https://canvas.test/api/duomi/v1/uploads", { method: "POST", body: form as never });
+        expect(response.status, await response.clone().text()).toBe(200);
+        const { url } = (await response.json()) as { url: string };
+        expect(url).toMatch(/^https:\/\/media\.example\.com\/duomi-references\/[0-9a-f-]+\.png$/);
+        const key = new URL(url).pathname.slice(1);
+        const stored = await (await runtime.getR2Bucket("REFERENCES")).get(key);
+        expect(stored).not.toBeNull();
+        expect(stored?.httpMetadata?.contentType).toBe("image/png");
+        await stored?.arrayBuffer();
+    });
+
+    it("uploads a raw image body to the Miniflare R2 binding", async () => {
+        const response = await runtime.dispatchFetch("https://canvas.test/api/duomi/v1/uploads", {
+            method: "POST",
+            headers: { "Content-Type": "image/png" },
+            body: new Uint8Array([137, 80, 78, 71]),
+        });
+        expect(response.status, await response.clone().text()).toBe(200);
+        const { url } = (await response.json()) as { url: string };
+        expect(url).toMatch(/^https:\/\/media\.example\.com\/duomi-references\/[0-9a-f-]+\.png$/);
+    });
+
+    it("rejects invalid and oversized uploads as JSON", async () => {
+        const invalid = new RuntimeFormData();
+        invalid.set("image", image("reference.txt", "text", "text/plain"));
+        const invalidResponse = await runtime.dispatchFetch("https://canvas.test/api/duomi/v1/uploads", { method: "POST", body: invalid as never });
+        expect(invalidResponse.status).toBe(400);
+        expect(((await invalidResponse.json()) as { error: { type: string } }).error.type).toBe("invalid_request_error");
+
+        const oversized = new RuntimeFormData();
+        oversized.set("image", image("large.png", new Uint8Array(20 * 1024 * 1024 + 1)));
+        const oversizedResponse = await runtime.dispatchFetch("https://canvas.test/api/duomi/v1/uploads", { method: "POST", body: oversized as never });
+        expect(oversizedResponse.status, await oversizedResponse.clone().text()).toBe(413);
+        await oversizedResponse.arrayBuffer();
+    });
+
+    it("proxies an allowed Duomi result image through the same origin", async () => {
+        const response = await handleRequest(
+            new Request("https://canvas.test/api/duomi/v1/media?url=" + encodeURIComponent("https://openservice-prod-1.oss-cn-hangzhou.aliyuncs.com/result.png")),
+            directEnv(),
+            async () => new Response(new Uint8Array([137, 80, 78, 71]), { headers: { "Content-Type": "image/png", "Content-Length": "4" } }),
+        );
+        expect(response.status).toBe(200);
+        expect(response.headers.get("content-type")).toBe("image/png");
+        expect(Array.from(new Uint8Array(await response.arrayBuffer()))).toEqual([137, 80, 78, 71]);
+
+        await expect(
+            handleRequest(
+                new Request("https://canvas.test/api/duomi/v1/media?url=" + encodeURIComponent("https://example.com/not-duomi.png")),
+                directEnv(),
+            ),
+        ).rejects.toMatchObject({ statusCode: 400, type: "invalid_request_error" });
+    });
+
+    it("converts a JSON reference edit through the shared Duomi client", async () => {
+        const calls: Array<{ url: string; authorization: string | null; body: unknown }> = [];
+        let poll = 0;
+        const fetchImpl: typeof fetch = async (input, init) => {
+            const url = String(input);
+            calls.push({ url, authorization: new Headers(init?.headers).get("Authorization"), body: init?.body ? JSON.parse(String(init.body)) : undefined });
+            if (url.endsWith("?async=true")) return Response.json({ id: "worker-image-task" });
+            poll += 1;
+            return Response.json(poll === 1 ? { state: "running" } : { state: "succeeded", data: { images: [{ url: "https://cdn.test/one.png" }, { url: "https://cdn.test/two.png" }] } });
+        };
+        const response = await handleRequest(
+            new Request("https://canvas.test/api/duomi/v1/images/edits", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ model: "gpt-image-2.5-flare", prompt: "edit", image: ["https://media.example.com/a.png", "https://media.example.com/b.png"] }),
+            }),
+            directEnv({ DUOMI_POLL_INTERVAL_MS: "1", DUOMI_TIMEOUT_MS: "100" }),
+            fetchImpl,
+        );
+        expect(response.status).toBe(200);
+        expect(((await response.json()) as { data: Array<{ url: string }> }).data).toEqual([{ url: "https://cdn.test/one.png" }, { url: "https://cdn.test/two.png" }]);
+        expect(calls[0]).toMatchObject({ authorization: "worker-test-secret", body: { model: "gpt-image-2.5-flare", prompt: "edit", image: ["https://media.example.com/a.png", "https://media.example.com/b.png"] } });
+    });
+
+    it("rejects mask edits and supports JSON video references", async () => {
+        const masked = await runtime.dispatchFetch("https://canvas.test/api/duomi/v1/images/edits", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ prompt: "inpaint", image: ["https://media.example.com/a.png"], mask: true }),
+        });
+        expect(masked.status).toBe(400);
+        expect(((await masked.json()) as { error: { type: string } }).error.type).toBe("unsupported_feature");
+
+        let payload: unknown;
+        const response = await handleRequest(
+            new Request("https://canvas.test/api/duomi/v1/videos", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ model: "veo3.1-fast", prompt: "move", size: "16:9", resolution_name: "1080p", image_urls: ["https://media.example.com/first.png", "https://media.example.com/last.png"] }),
+            }),
+            directEnv(),
+            async (_input, init) => {
+                payload = JSON.parse(String(init?.body));
+                return Response.json({ id: "video-task" });
+            },
+        );
+        expect(response.status).toBe(200);
+        expect(payload).toMatchObject({ model: "veo3.1-fast", generation_type: "FIRST&LAST", image_urls: ["https://media.example.com/first.png", "https://media.example.com/last.png"] });
+    });
+
+    it("converts and polls a Kling multi-image video", async () => {
+        const calls: Array<{ url: string; body?: unknown }> = [];
+        const fetchImpl: typeof fetch = async (input, init) => {
+            const url = String(input);
+            calls.push({ url, ...(init?.body ? { body: JSON.parse(String(init.body)) } : {}) });
+            if (init?.method === "POST") return Response.json({ code: 0, data: { task_id: "worker-kling-task" } });
+            return Response.json({
+                code: 200,
+                data: {
+                    task_id: "worker-kling-task",
+                    task_status: "completed",
+                    task_status_msg: null,
+                    task_result: { images: null, videos: [{ id: "video-1", url: "https://cdn.test/worker-kling.mp4", duration: "10" }] },
+                },
+            });
+        };
+        const image_urls = ["https://media.example.com/a.png", "https://media.example.com/b.png"];
+        const created = await handleRequest(
+            new Request("https://canvas.test/api/duomi/v1/videos", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ model: "kling-v1-6", prompt: "pan across both characters", seconds: "10", size: "16:9", image_urls }),
+            }),
+            directEnv(),
+            fetchImpl,
+        );
+        expect(await created.json()).toEqual({ id: "kling:worker-kling-task", status: "queued" });
+        expect(calls[0]).toEqual({
+            url: "https://duomi.test/api/video/kling/v1/videos/multi-image2video",
+            body: {
+                model_name: "kling-v1-6",
+                image_list: image_urls.map((image) => ({ image })),
+                prompt: "pan across both characters",
+                negative_prompt: "",
+                mode: "std",
+                duration: "10",
+                aspect_ratio: "16:9",
+            },
+        });
+
+        const polled = await handleRequest(
+            new Request(`https://canvas.test/api/duomi/v1/videos/${encodeURIComponent("kling:worker-kling-task")}`),
+            directEnv(),
+            fetchImpl,
+        );
+        expect(await polled.json()).toEqual({ id: "kling:worker-kling-task", status: "completed", url: "https://cdn.test/worker-kling.mp4" });
+        expect(calls[1]?.url).toBe("https://duomi.test/api/video/kling/v1/videos/multi-image2video/worker-kling-task");
+    });
+
+    it("converts and polls a Kling Omni video", async () => {
+        const calls: Array<{ url: string; body?: unknown }> = [];
+        const fetchImpl: typeof fetch = async (input, init) => {
+            const url = String(input);
+            calls.push({ url, ...(init?.body ? { body: JSON.parse(String(init.body)) } : {}) });
+            if (init?.method === "POST") return Response.json({ code: 0, data: { task_id: "worker-omni-task" } });
+            return Response.json({
+                code: 0,
+                data: {
+                    task_id: "worker-omni-task",
+                    task_status: "succeed",
+                    task_status_msg: null,
+                    task_result: { images: null, videos: [{ id: "video-1", url: "https://cdn.test/worker-omni.mp4", duration: "3", video_url_download: "" }] },
+                },
+            });
+        };
+        const created = await handleRequest(
+            new Request("https://canvas.test/api/duomi/v1/videos", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    model: "kling-v3-omni",
+                    prompt: "introduce the city",
+                    seconds: "3",
+                    size: "16:9",
+                    image_urls: [],
+                    multi_shot: true,
+                    multi_prompt: [
+                        { index: 1, prompt: "city skyline", duration: "1" },
+                        { index: 2, prompt: "street close-up", duration: "2" },
+                    ],
+                }),
+            }),
+            directEnv(),
+            fetchImpl,
+        );
+        expect(await created.json()).toEqual({ id: "omni:worker-omni-task", status: "queued" });
+        expect(calls[0]).toMatchObject({
+            url: "https://duomi.test/api/video/kling/v1/videos/omni-video",
+            body: { model_name: "kling-v3-omni", sound: "on", duration: "3", multi_shot: true, shot_type: "customize" },
+        });
+        const polled = await handleRequest(
+            new Request(`https://canvas.test/api/duomi/v1/videos/${encodeURIComponent("omni:worker-omni-task")}`),
+            directEnv(),
+            fetchImpl,
+        );
+        expect(await polled.json()).toEqual({ id: "omni:worker-omni-task", status: "completed", url: "https://cdn.test/worker-omni.mp4" });
+        expect(calls[1]?.url).toBe("https://duomi.test/api/video/kling/v1/videos/omni-video/worker-omni-task");
+    });
+
+    it("delegates non-API routes to the static asset binding", async () => {
+        const testEnv = directEnv({ ASSETS: { fetch: async () => new Response("spa-index") } as unknown as Fetcher });
+        const response = await handleRequest(new Request("https://canvas.test/canvas/project-1"), testEnv);
+        expect(await response.text()).toBe("spa-index");
+    });
+
+    it("keeps the default ten-minute image poll budget within 50 upstream requests", () => {
+        expect(defaultImageUpstreamRequestBudget()).toBe(41);
+        expect(defaultImageUpstreamRequestBudget()).toBeLessThanOrEqual(50);
+    });
+});

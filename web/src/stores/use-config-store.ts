@@ -5,7 +5,7 @@ import { nanoid } from "nanoid";
 
 import i18n from "@/i18n";
 
-export type ApiCallFormat = "openai" | "gemini";
+export type ApiCallFormat = "openai" | "gemini" | "ark";
 export type ModelCapability = "image" | "video" | "text" | "audio";
 export type ReasoningEffort = "auto" | "low" | "medium" | "high" | "xhigh";
 
@@ -74,35 +74,56 @@ export const CONFIG_STORE_KEY = "infinite-canvas:ai_config_store";
 const CHANNEL_MODEL_SEPARATOR = "::";
 const OPENAI_BASE_URL = "https://api.openai.com";
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com";
+const ARK_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3";
+const ARK_PROXY_BASE_URL = "/api/ark/api/v3";
+const DUOMI_BASE_URL = "/api/duomi/v1";
 const LEGACY_IMAGE_MODEL = "gpt-image-2";
 const DEFAULT_IMAGE_MODEL = "gpt-image-2.5-flare";
+const DUOMI_MODELS: ChannelModel[] = [
+    { name: DEFAULT_IMAGE_MODEL, capability: "image" },
+    { name: "gpt-image-2.5-sunburst", capability: "image" },
+    { name: "veo3.1-fast", capability: "video" },
+    { name: "veo3.1-pro", capability: "video" },
+    { name: "grok-video", capability: "video" },
+    { name: "grok-video-1.5", capability: "video" },
+    { name: "kling-v1-6", capability: "video" },
+    { name: "kling-v3-omni", capability: "video" },
+];
+const SEEDANCE_MODELS: ChannelModel[] = [
+    { name: "doubao-seedance-2-0-260128", capability: "video" },
+    { name: "doubao-seedance-2-0-fast-260128", capability: "video" },
+    { name: "doubao-seedance-2-0-mini-260615", capability: "video" },
+    { name: "doubao-seedance-2-5-260628", capability: "video" },
+];
 export const LOCAL_PROXY_PACKAGE = "@basketikun/canvas-proxy";
 export const DEFAULT_LOCAL_PROXY_URL = "http://127.0.0.1:23210";
 
 export const defaultConfig: AiConfig = {
     channelMode: "local",
-    baseUrl: OPENAI_BASE_URL,
-    apiKey: "",
+    baseUrl: DUOMI_BASE_URL,
+    apiKey: "local-duomi",
     apiFormat: "openai",
     channels: [
         {
             id: "default",
-            name: i18n.t("config.channels.defaultName"),
-            baseUrl: OPENAI_BASE_URL,
-            apiKey: "",
+            name: "Duomi \u5b89\u5168\u4ee3\u7406",
+            baseUrl: DUOMI_BASE_URL,
+            apiKey: "local-duomi",
             apiFormat: "openai",
-            models: [
-                { name: DEFAULT_IMAGE_MODEL, capability: "image" },
-                { name: "gpt-image-2.5-sunburst", capability: "image" },
-                { name: "grok-imagine-video", capability: "video" },
-                { name: "gpt-5.5", capability: "text" },
-                { name: "gpt-4o-mini-tts", capability: "audio" },
-            ],
+            models: DUOMI_MODELS,
+        },
+        {
+            id: "doubao-seedance",
+            name: "\u8c46\u5305 Seedance",
+            baseUrl: ARK_PROXY_BASE_URL,
+            apiKey: "cloudflare-ark",
+            apiFormat: "ark",
+            models: SEEDANCE_MODELS,
         },
     ],
     model: `default::${DEFAULT_IMAGE_MODEL}`,
     imageModel: `default::${DEFAULT_IMAGE_MODEL}`,
-    videoModel: "default::grok-imagine-video",
+    videoModel: "default::grok-video",
     textModel: "default::gpt-5.5",
     audioModel: "default::gpt-4o-mini-tts",
     audioVoice: "alloy",
@@ -116,7 +137,7 @@ export const defaultConfig: AiConfig = {
     videoMode: "frames",
     systemPrompt: "",
     reasoningEffort: "auto",
-    models: [`default::${DEFAULT_IMAGE_MODEL}`, "default::grok-imagine-video", "default::gpt-5.5", "default::gpt-4o-mini-tts"],
+    models: [...DUOMI_MODELS.map((model) => `default::${model.name}`), ...SEEDANCE_MODELS.map((model) => `doubao-seedance::${model.name}`)],
     quality: "auto",
     size: "1:1",
     background: "",
@@ -149,7 +170,7 @@ type ConfigStore = {
     clearPromptContinue: () => void;
 };
 
-const VIDEO_KEYWORDS = ["video", "sora", "veo", "kling", "wan", "hailuo"];
+const VIDEO_KEYWORDS = ["video", "sora", "veo", "kling", "wan", "hailuo", "seedance"];
 
 export function boolConfig(value: string, fallback: boolean) {
     return value ? value === "true" : fallback;
@@ -413,7 +434,7 @@ export function modelOptionLabel(config: AiConfig, value: string) {
     const decoded = decodeChannelModel(value);
     if (!decoded) return value;
     const channel = config.channels.find((item) => item.id === decoded.channelId);
-    return channel ? `${decoded.model}（${channel.name}）` : decoded.model;
+    return channel ? `${decoded.model}\uFF08${channel.name}\uFF09` : decoded.model;
 }
 
 export function modelOptionsFromChannels(channels: ModelChannel[]) {
@@ -472,16 +493,22 @@ function normalizeChannels(config: AiConfig) {
             }),
         );
     }
+    const seedance = channels.find((channel) => channel.id === "doubao-seedance" || channel.models.some((model) => model.name.includes("seedance")));
+    if (seedance) seedance.models = normalizeChannelModels([...seedance.models, ...SEEDANCE_MODELS]);
+    else channels.push(createModelChannel({ id: "doubao-seedance", name: "\u8c46\u5305 Seedance", baseUrl: ARK_PROXY_BASE_URL, apiKey: "cloudflare-ark", apiFormat: "ark", models: SEEDANCE_MODELS }));
+    const duomi = channels.find((channel) => channel.baseUrl.replace(/\/+$/, "").endsWith("/api/duomi/v1"));
+    if (duomi) duomi.models = normalizeChannelModels([...duomi.models, ...DUOMI_MODELS]);
     return channels;
 }
 
 export function defaultBaseUrlForApiFormat(apiFormat: ApiCallFormat) {
     if (apiFormat === "gemini") return GEMINI_BASE_URL;
+    if (apiFormat === "ark") return ARK_BASE_URL;
     return OPENAI_BASE_URL;
 }
 
 function normalizeApiFormat(apiFormat: unknown): ApiCallFormat {
-    return apiFormat === "gemini" ? apiFormat : "openai";
+    return apiFormat === "gemini" || apiFormat === "ark" ? apiFormat : "openai";
 }
 
 function uniqueModelOptions(models: string[]) {
@@ -491,7 +518,7 @@ function uniqueModelOptions(models: string[]) {
 export function buildApiUrl(baseUrl: string, path: string) {
     const normalizedBaseUrl = baseUrl.trim().replace(/\/+$/, "");
     const lowerBaseUrl = normalizedBaseUrl.toLowerCase();
-    const apiBaseUrl = lowerBaseUrl.endsWith("/v1") ? normalizedBaseUrl : `${normalizedBaseUrl}/v1`;
+    const apiBaseUrl = lowerBaseUrl.endsWith("/v1") || lowerBaseUrl.endsWith("/api/v3") ? normalizedBaseUrl : `${normalizedBaseUrl}/v1`;
     return withLocalProxy(`${apiBaseUrl}${path}`);
 }
 

@@ -7,3 +7,19 @@ services:
     ports:
       - "3000:3000"
     restart: unless-stopped
+    depends_on:
+      - chatgpt-discount
+
+  chatgpt-discount:
+    image: ghcr.io/basketikun/chatgpt2api:latest
+    ports:
+      - "3001:80"
+    restart: unless-stopped
+    environment:
+      STORAGE_BACKEND: json
+      CHATGPT2API_AUTH_KEY: ${CHATGPT2API_AUTH_KEY:?请设置 CHATGPT2API_AUTH_KEY}
+    volumes:
+      - chatgpt_discount_data:/app/data
+
+volumes:
+  chatgpt_discount_data:

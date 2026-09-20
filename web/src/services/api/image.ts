@@ -9,6 +9,7 @@ import { buildImageReferencePromptText } from "@/lib/image-reference-prompt";
 import { imageToDataUrl } from "@/services/image-storage";
 import { imageSizePresets, inferMediaScale } from "@/lib/media-size";
 import type { ReferenceImage } from "@/types/image";
+import { duomiResultImageUrl, isDuomiAdapterBaseUrl } from "@/services/api/duomi";
 
 const apiText = (key: string, options?: Record<string, unknown>) => i18n.t(`apiErrors.${key}`, options);
 
@@ -815,7 +816,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
     const requestSize = resolveRequestSize(quality, config.size);
     const background = normalizeBackground(config.background);
     try {
-        if (isAsyncImageModel(requestConfig.model)) return await requestAsyncImages(requestConfig, prompt, requestSize, quality, [], options);
+        if (isAsyncImageModel(requestConfig.model) && !isDuomiAdapterBaseUrl(requestConfig.baseUrl)) return await requestAsyncImages(requestConfig, prompt, requestSize, quality, [], options);
         const response = await axios.post<ImageApiResponse>(
             aiApiUrl(requestConfig, "/images/generations"),
             {
@@ -836,7 +837,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
             },
         );
         const images = await parseImagePayload(response.data);
-        return images;
+        return isDuomiAdapterBaseUrl(requestConfig.baseUrl) ? images.map((image) => ({ ...image, dataUrl: duomiResultImageUrl(requestConfig.baseUrl, image.dataUrl) })) : images;
     } catch (error) {
         throw new Error(readAxiosError(error, apiText("requestFailed")));
     }
@@ -878,7 +879,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     const quality = normalizeQuality(config.quality);
     const requestSize = resolveRequestSize(quality, config.size);
     const background = normalizeBackground(config.background);
-    if (isAsyncImageModel(requestConfig.model)) {
+    if (isAsyncImageModel(requestConfig.model) && !isDuomiAdapterBaseUrl(requestConfig.baseUrl)) {
         try {
             const refs = await Promise.all(references.map((image) => imageToDataUrl(image)));
             return await requestAsyncImages(requestConfig, requestPrompt, requestSize, quality, refs, options);
@@ -911,7 +912,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     try {
         const response = await axios.post<ImageApiResponse>(aiApiUrl(requestConfig, "/images/edits"), formData, { headers: aiHeaders(requestConfig), signal: options?.signal, timeout: IMAGE_REQUEST_TIMEOUT_MS });
         const images = await parseImagePayload(response.data);
-        return images;
+        return isDuomiAdapterBaseUrl(requestConfig.baseUrl) ? images.map((image) => ({ ...image, dataUrl: duomiResultImageUrl(requestConfig.baseUrl, image.dataUrl) })) : images;
     } catch (error) {
         throw new Error(readAxiosError(error, apiText("requestFailed")));
     }
