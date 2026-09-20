@@ -76,6 +76,7 @@ const OPENAI_BASE_URL = "https://api.openai.com";
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com";
 const LEGACY_IMAGE_MODEL = "gpt-image-2";
 const DEFAULT_IMAGE_MODEL = "gpt-image-2.5-flare";
+const ADVANCED_IMAGE_MODEL = "gpt-image-2.5-sunburst";
 export const LOCAL_PROXY_PACKAGE = "@basketikun/canvas-proxy";
 export const DEFAULT_LOCAL_PROXY_URL = "http://127.0.0.1:23210";
 
@@ -93,7 +94,7 @@ export const defaultConfig: AiConfig = {
             apiFormat: "openai",
             models: [
                 { name: DEFAULT_IMAGE_MODEL, capability: "image" },
-                { name: "gpt-image-2.5-sunburst", capability: "image" },
+                { name: ADVANCED_IMAGE_MODEL, capability: "image" },
                 { name: "grok-imagine-video", capability: "video" },
                 { name: "gpt-5.5", capability: "text" },
                 { name: "gpt-4o-mini-tts", capability: "audio" },
@@ -116,7 +117,7 @@ export const defaultConfig: AiConfig = {
     videoMode: "frames",
     systemPrompt: "",
     reasoningEffort: "auto",
-    models: [`default::${DEFAULT_IMAGE_MODEL}`, "default::grok-imagine-video", "default::gpt-5.5", "default::gpt-4o-mini-tts"],
+    models: [`default::${DEFAULT_IMAGE_MODEL}`, `default::${ADVANCED_IMAGE_MODEL}`, "default::grok-imagine-video", "default::gpt-5.5", "default::gpt-4o-mini-tts"],
     quality: "auto",
     size: "1:1",
     background: "",
@@ -301,6 +302,7 @@ export function normalizeChannelModels(models: Array<string | ChannelModel> | un
         const script = typeof item === "string" ? undefined : item.script?.trim() || undefined;
         result.push({ name, capability, script });
     }
+    if (seen.has(DEFAULT_IMAGE_MODEL) && !seen.has(ADVANCED_IMAGE_MODEL)) result.push({ name: ADVANCED_IMAGE_MODEL, capability: "image" });
     return result;
 }
 
