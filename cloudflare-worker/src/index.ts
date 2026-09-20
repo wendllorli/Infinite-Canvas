@@ -1,6 +1,6 @@
 import { DuomiClient } from "../../duomi-adapter/src/duomi-client.js";
 import { AdapterError } from "../../duomi-adapter/src/errors.js";
-import { GROK_MODELS, IMAGE_MIME_TYPES, KLING_MODELS, QUALITY_VALUES, VEO_MODELS, canonicalVideoModel, imageUrls, mapVideoTask, validateVideoReferenceCount, videoPayload } from "../../duomi-adapter/src/media.js";
+import { GROK_MODELS, IMAGE_MIME_TYPES, KLING_MODELS, QUALITY_VALUES, VEO_MODELS, canonicalVideoModel, imageUrls, mapVideoTask, publicUrl, validateVideoReferenceCount, videoPayload } from "../../duomi-adapter/src/media.js";
 import { fetchDuomiResultImage } from "../../duomi-adapter/src/media-proxy.js";
 import type { AdapterConfig, AdapterErrorBody, DuomiImageRequest } from "../../duomi-adapter/src/types.js";
 import { siteAuthResponse } from "./site-auth.js";
@@ -62,8 +62,13 @@ export async function handleRequest(request: Request, env: Env, fetchImpl: typeo
     }
     if (request.method === "GET" && path === "/v1/media") return mediaResponse(url.searchParams.get("url"), fetchImpl);
     if (request.method === "POST" && path === "/v1/uploads") return uploadResponse(request, env);
-    if (request.method === "POST" && path === "/v1/images/generations") return json(await client.generateImages(generationRequest(config, await jsonBody(request))));
+    if (request.method === "POST" && path === "/v1/images/generations") {
+        const payload = await generationRequest(config, await jsonBody(request), env);
+        return json(url.searchParams.get("async") === "true" ? await client.createImageTask(payload) : await client.generateImages(payload));
+    }
     if (request.method === "POST" && path === "/v1/images/edits") return json(await client.generateImages(await editRequest(request, config, env)));
+    const imageTaskMatch = request.method === "GET" ? path.match(/^\/v1\/tasks\/([^/]+)$/) : null;
+    if (imageTaskMatch) return json(await client.getImageTask(decodeURIComponent(imageTaskMatch[1]!)));
     if (request.method === "POST" && path === "/v1/videos") {
         const id = await client.createVideo(await videoRequest(request, env));
         return json({ id, status: "queued" });
@@ -152,14 +157,37 @@ async function mediaResponse(value: unknown, fetchImpl: typeof fetch) {
     return new Response(upstream.body, { status: 200, headers });
 }
 
-function generationRequest(config: AdapterConfig, body: Record<string, unknown>): DuomiImageRequest {
+async function generationRequest(config: AdapterConfig, body: Record<string, unknown>, env: Env): Promise<DuomiImageRequest> {
     const prompt = text(body.prompt);
     validatePrompt(prompt);
     const quality = text(body.quality);
     validateQuality(quality);
-    return { model: text(body.model) || config.imageModel, prompt, ...(text(body.size) ? { size: text(body.size) } : {}), ...(quality ? { quality } : {}) };
+    const references = await resolveImageReferences(body.image, env);
+    return { model: text(body.model) || config.imageModel, prompt, ...(text(body.size) ? { size: text(body.size) } : {}), ...(quality ? { quality } : {}), ...(references.length ? { image: references } : {}) };
 }
 
+async function resolveImageReferences(value: unknown, env: Env) {
+    const values = Array.isArray(value) ? value : typeof value === "string" && value.trim() ? [value] : [];
+    if (values.length > 9) throw new AdapterError(400, "A maximum of 9 reference images is supported", "invalid_request_error");
+    return Promise.all(values.map((item) => (typeof item === "string" && item.trim().startsWith("data:") ? uploadDataUrl(item.trim(), env) : Promise.resolve(publicUrl(item)))));
+}
+
+async function uploadDataUrl(value: string, env: Env) {
+    const match = /^data:([^;,]+);base64,([a-z\d+/=\s]+)$/i.exec(value);
+    if (!match) throw new AdapterError(400, "Reference image data URL is invalid", "invalid_request_error");
+    const type = match[1]!.toLowerCase();
+    if (!IMAGE_MIME_TYPES.has(type)) throw new AdapterError(400, `Unsupported image type: ${type}`, "invalid_request_error");
+    let binary: string;
+    try {
+        binary = atob(match[2]!.replace(/\s+/g, ""));
+    } catch {
+        throw new AdapterError(400, "Reference image data URL is invalid", "invalid_request_error");
+    }
+    if (binary.length > MAX_IMAGE_BYTES) throw new AdapterError(413, "File exceeds 20 MB limit", "invalid_request_error");
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+    return uploadFile({ type, size: bytes.byteLength, arrayBuffer: async () => bytes.buffer }, env);
+}
 async function editRequest(request: Request, config: AdapterConfig, env: Env): Promise<DuomiImageRequest> {
     if (!isMultipart(request)) {
         const body = await jsonBody(request);

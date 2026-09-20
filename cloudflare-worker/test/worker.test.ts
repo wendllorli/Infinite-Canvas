@@ -253,6 +253,49 @@ describe("Cloudflare Worker routes", () => {
         ).rejects.toMatchObject({ statusCode: 400, type: "invalid_request_error" });
     });
 
+    it.each(["gpt-image-2.5-flare", "gpt-image-2.5-sunburst"])("uploads %s data URL references to R2 and proxies async task polling", async (model) => {
+        const stored: Array<{ key: string; contentType?: string }> = [];
+        const calls: Array<{ url: string; method: string; body?: unknown }> = [];
+        const env = directEnv({
+            REFERENCES: {
+                put: async (key: string, _value: unknown, options?: R2PutOptions) => {
+                    stored.push({ key, contentType: options?.httpMetadata && "contentType" in options.httpMetadata ? options.httpMetadata.contentType : undefined });
+                    return {} as R2Object;
+                },
+            } as unknown as R2Bucket,
+        });
+        const fetchImpl: typeof fetch = async (input, init) => {
+            calls.push({ url: String(input), method: init?.method || "GET", ...(init?.body ? { body: JSON.parse(String(init.body)) } : {}) });
+            return init?.method === "POST"
+                ? Response.json({ id: `${model}-task` })
+                : Response.json({ id: `${model}-task`, state: "succeeded", data: { images: [{ url: "https://cdn.test/output.png", file_name: "output.png" }], description: "" }, progress: 100 });
+        };
+        const created = await handleRequest(
+            new Request("https://canvas.test/api/duomi/v1/images/generations?async=true", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ model, prompt: "use the reference", image: "data:image/png;base64,iVBORw0KGgo=" }),
+            }),
+            env,
+            fetchImpl,
+        );
+        const taskId = ((await created.json()) as { id: string }).id;
+        const polled = await handleRequest(new Request(`https://canvas.test/api/duomi/v1/tasks/${encodeURIComponent(taskId)}`), env, fetchImpl);
+
+        expect(created.status).toBe(200);
+        expect(polled.status).toBe(200);
+        expect((await polled.json()) as object).toMatchObject({ id: taskId, state: "succeeded", data: { images: [{ url: "https://cdn.test/output.png" }] } });
+        expect(stored).toHaveLength(1);
+        expect(stored[0]).toMatchObject({ contentType: "image/png" });
+        expect(stored[0]?.key).toMatch(/^duomi-references\/[0-9a-f-]+\.png$/);
+        expect(calls[0]).toMatchObject({
+            url: "https://duomi.test/v1/images/generations?async=true",
+            method: "POST",
+            body: { model, prompt: "use the reference", image: [`https://media.example.com/${stored[0]?.key}`] },
+        });
+        expect(calls[1]).toMatchObject({ url: `https://duomi.test/v1/tasks/${encodeURIComponent(taskId)}`, method: "GET" });
+    });
+
     it("converts a JSON reference edit through the shared Duomi client", async () => {
         const calls: Array<{ url: string; authorization: string | null; body: unknown }> = [];
         let poll = 0;

@@ -3,6 +3,7 @@
 ## 2026-09-20
 
 + [Changed] Keep the v0.19.0 frontend and retain only the Cloudflare Worker, Duomi Adapter, and Seedance backend proxy integration. Seedance is configured manually or through a custom model-call script.
++ [Fixed] Upload GPT Image 2.5 reference data URLs to R2 under duomi-references/, forward the resulting public URLs in the image array, and expose async image task polling through /v1/tasks/{id}.
 
 ## Unreleased
 

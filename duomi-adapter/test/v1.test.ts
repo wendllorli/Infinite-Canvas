@@ -85,6 +85,27 @@ describe("V1 routes", () => {
         await app.close();
     });
 
+    it("passes through async image task creation, image URLs, and task queries", async () => {
+        const requests: Array<{ method?: string; url?: string; body?: unknown }> = [];
+        const base = await mockServer((request, response, body) => {
+            requests.push({ method: request.method, url: request.url, ...(body ? { body: JSON.parse(body) } : {}) });
+            if (request.method === "POST") json(response, { id: "async-image-task" });
+            else json(response, { id: "async-image-task", state: "succeeded", data: { images: [{ url: "https://cdn.test/result.png", file_name: "result.png" }], description: "" }, progress: 100 });
+        });
+        const app = await buildApp(config(base));
+        const created = await app.inject({
+            method: "POST",
+            url: "/v1/images/generations?async=true",
+            payload: { model: "gpt-image-2.5-sunburst", prompt: "use reference", image: "https://media.example.com/duomi-references/reference.png" },
+        });
+        const polled = await app.inject({ method: "GET", url: "/v1/tasks/async-image-task" });
+        expect(created.json()).toEqual({ id: "async-image-task" });
+        expect(polled.json()).toMatchObject({ id: "async-image-task", state: "succeeded", data: { images: [{ url: "https://cdn.test/result.png" }] } });
+        expect(requests[0]).toEqual({ method: "POST", url: "/v1/images/generations?async=true", body: { model: "gpt-image-2.5-sunburst", prompt: "use reference", image: ["https://media.example.com/duomi-references/reference.png"] } });
+        expect(requests[1]).toEqual({ method: "GET", url: "/v1/tasks/async-image-task" });
+        await app.close();
+    });
+
     it("creates a task, polls pending and running, then returns every image", async () => {
         let poll = 0;
         const base = await mockServer((request, response, body) => {

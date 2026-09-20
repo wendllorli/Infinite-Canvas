@@ -30,15 +30,12 @@ export class DuomiClient {
     }
 
     async generateImages(input: DuomiImageRequest): Promise<ImageResult> {
-        assertDuomiKey(this.config);
         const deadline = this.now() + this.config.timeoutMs;
-        const created = await this.requestJson<DuomiCreatedTask>("/v1/images/generations?async=true", { method: "POST", body: JSON.stringify(input) }, deadline);
-        const id = stringValue(created.id);
-        if (!id) throw new AdapterError(502, "Duomi image generation did not return a task id", "invalid_upstream_response");
+        const { id } = await this.createImageTask(input, deadline);
 
         for (;;) {
             if (this.now() >= deadline) throw timeoutError();
-            const task = await this.requestJson<DuomiTask>(`/v1/tasks/${encodeURIComponent(id)}`, { method: "GET" }, deadline);
+            const task = await this.getImageTask(id, deadline);
             const state = stringValue(task.state);
             if (state === "succeeded") return imageResult(task);
             if (state === "error") throw new AdapterError(502, taskErrorMessage(task, "Duomi image generation failed"), "duomi_api_error");
@@ -49,6 +46,21 @@ export class DuomiClient {
             if (remaining <= 0) throw timeoutError();
             await this.sleep(Math.min(this.config.pollIntervalMs, remaining));
         }
+    }
+
+    async createImageTask(input: DuomiImageRequest, deadline = this.now() + this.config.timeoutMs): Promise<{ id: string }> {
+        assertDuomiKey(this.config);
+        const created = await this.requestJson<DuomiCreatedTask>("/v1/images/generations?async=true", { method: "POST", body: JSON.stringify(input) }, deadline);
+        const id = taskId(created);
+        if (!id) throw new AdapterError(502, "Duomi image generation did not return a task id", "invalid_upstream_response");
+        return { id };
+    }
+
+    async getImageTask(id: string, deadline = this.now() + this.config.timeoutMs): Promise<DuomiTask> {
+        assertDuomiKey(this.config);
+        const normalizedId = id.trim();
+        if (!normalizedId) throw new AdapterError(400, "Image task id is required", "invalid_request_error");
+        return this.requestJson<DuomiTask>(`/v1/tasks/${encodeURIComponent(normalizedId)}`, { method: "GET" }, deadline);
     }
 
     async createVideo(input: DuomiVideoRequest) {

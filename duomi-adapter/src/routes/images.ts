@@ -9,7 +9,11 @@ import { parseMultipart } from "../multipart.js";
 
 export function imageRoutes(config: AdapterConfig, client: DuomiClient, storage?: ReferenceStorage): FastifyPluginAsync {
     return async (app) => {
-        app.post<{ Body: ImageGenerationRequest }>("/v1/images/generations", async (request) => client.generateImages(imageRequest(config, request.body || {})));
+        app.post<{ Body: ImageGenerationRequest; Querystring: { async?: string } }>("/v1/images/generations", async (request) => {
+            const payload = imageRequest(config, request.body || {});
+            return request.query.async === "true" ? client.createImageTask(payload) : client.generateImages(payload);
+        });
+        app.get<{ Params: { id: string } }>("/v1/tasks/:id", async (request) => client.getImageTask(request.params.id));
 
         app.post("/v1/images/edits", async (request) => {
             if (!request.isMultipart()) return client.generateImages(imageEditJsonRequest(config, request.body));
@@ -23,11 +27,13 @@ function imageRequest(config: AdapterConfig, body: ImageGenerationRequest): Duom
     validatePrompt(prompt);
     const quality = text(body.quality);
     validateQuality(quality);
+    const images = body.image === undefined ? [] : imageUrls(typeof body.image === "string" ? [body.image] : body.image, 9);
     return {
         model: text(body.model) || config.imageModel,
         prompt,
         ...(text(body.size) ? { size: text(body.size) } : {}),
         ...(quality ? { quality } : {}),
+        ...(images.length ? { image: images } : {}),
     };
 }
 

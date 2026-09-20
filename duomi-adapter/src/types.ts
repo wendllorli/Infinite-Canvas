@@ -30,6 +30,7 @@ export type ImageGenerationRequest = {
     n?: number;
     response_format?: string;
     output_format?: string;
+    image?: string | string[];
 };
 
 export type ImageEditJsonRequest = ImageGenerationRequest & {
